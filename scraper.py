@@ -7,40 +7,76 @@ import requests
 
 CHECKIN = "2026-08-29"
 CHECKOUT = "2026-08-30"
-URL = "https://www.poznanapartments.com/pokoje/apartament-delux-z-1-sypialnia"
+ADULTS = "2"
+
+# Adres silnika rezerwacji z parametrami dat
+URL_BOOKING = f"https://www.poznanapartments.com/rezerwacja?arrival={CHECKIN}&departure={CHECKOUT}&adults={ADULTS}"
+
 DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
 headers = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
-        " like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    )
+        " like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
 
-def sprawdz_cene():
+def pobierz_cene_deluxe():
   teraz = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+  cena_wynik = "Brak dostępności / Nie znaleziono"
+  status = "OK"
 
   try:
-    response = requests.get(URL, headers=headers, timeout=20)
+    response = requests.get(URL_BOOKING, headers=headers, timeout=25)
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # Wyszukanie kwot w zł na stronie
-    tekst_strony = soup.get_text()
-    ceny = re.findall(r"\d+[\s.,]?\d*\s*zł", tekst_strony, re.IGNORECASE)
+    # Szukamy bloku/karty zawierającej "Delux" lub "Deluxe"
+    tekst_caly = soup.get_text()
 
-    if ceny:
-      unikalne_ceny = list(dict.fromkeys([c.strip() for c in ceny]))
-      cena_tekst = ", ".join(unikalne_ceny[:3])
-    else:
-      cena_tekst = "Brak jednoznacznej stawki na stronie"
-    status = "OK"
+    # Wyszukiwanie ceny w sekcji Delux
+    znaleziono = False
+    for el in soup.find_all(
+        ["div", "article", "section", "li"], class_=True
+    ) or soup.find_all(["div"]):
+      tekst_el = el.get_text()
+      if (
+          "Apartament Delux" in tekst_el
+          or "Apartament Deluxe" in tekst_el
+          or "Delux z 1 sypialnią" in tekst_el
+      ):
+        # Wyciągamy kwoty w formacie np. 647,40 zł
+        ceny = re.findall(
+            r"(\d+[\s.,]?\d*)\s*zł", tekst_el, flags=re.IGNORECASE
+        )
+        if ceny:
+          # Bierzemy najświeższą/główną cenę
+          cena_wynik = f"{ceny[-1].strip()} zł"
+          znaleziono = True
+          break
+
+    # Rezerwowe dopasowanie Regexem jeśli struktura HTML jest zagnieżdżona
+    if not znaleziono:
+      match = re.search(
+          r"Delux[^\n\r]*?(\d+[\s.,]\d{2})\s*zł",
+          tekst_caly,
+          re.IGNORECASE | re.DOTALL,
+      )
+      if match:
+        cena_wynik = f"{match.group(1).strip()} zł"
+      else:
+        # Próba bezpośredniego złapania aktualnej promocji
+        wszystkie_ceny = re.findall(r"\d+,\d{2}\s*zł", tekst_caly)
+        if wszystkie_ceny:
+          cena_wynik = f"Wykryte stawki: {', '.join(wszystkie_ceny[:3])}"
+
   except Exception as e:
-    cena_tekst = f"Blad: {str(e)}"
+    cena_wynik = f"Błąd: {str(e)}"
     status = "ERROR"
 
-  # Wczytaj dotychczasowa historie
+  # 1. Zapis do historii JSON
   historia = []
   if os.path.exists(DATA_FILE):
     try:
@@ -53,8 +89,9 @@ def sprawdz_cene():
       0,
       {
           "data": teraz,
-          "termin": f"{CHECKIN} - {CHECKOUT}",
-          "cena": cena_tekst,
+          "termin": f"{CHECKIN} do {CHECKOUT}",
+          "pokoj": "Apartament Delux z 1 sypialnią",
+          "cena": cena_wynik,
           "status": status,
       },
   )
@@ -62,64 +99,58 @@ def sprawdz_cene():
   with open(DATA_FILE, "w", encoding="utf-8") as f:
     json.dump(historia, f, ensure_ascii=False, indent=2)
 
-  # Generowanie tabeli HTML
-  wiersze_tabeli = ""
-  for wpis in historia:
-    wiersze_tabeli += f"""
+  # 2. Generowanie strony index.html
+  wiersze = ""
+  for h in historia:
+    wiersze += f"""
         <tr>
-            <td>{wpis['data']}</td>
-            <td>{wpis['termin']}</td>
-            <td style="font-weight: bold; color: #2563eb;">{wpis['cena']}</td>
-        </tr>
-        """
+            <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{h['data']}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{h['pokoj']}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #0284c7; font-size: 1.1rem;">{h['cena']}</td>
+        </tr>"""
 
-  html_content = f"""<!DOCTYPE html>
+  html = f"""<!DOCTYPE html>
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monitor Cen - Poznan Apartments</title>
+    <title>Monitor Ceny - Apartament Deluxe</title>
     <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; color: #1e293b; padding: 20px; }}
-        .container {{ max-width: 750px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }}
-        h1 {{ margin-top: 0; font-size: 1.4rem; color: #0f172a; }}
-        .badge {{ display: inline-block; background: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 6px; font-size: 0.85rem; margin-bottom: 15px; }}
-        table {{ width: 100%; border-collapse: collapse; margin-top: 15px; }}
-        th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 0.95rem; }}
-        th {{ background: #f1f5f9; color: #475569; }}
-        tr:hover {{ background: #f8fafc; }}
-        .link {{ display: block; margin-top: 20px; font-size: 0.9rem; color: #0284c7; text-decoration: none; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 24px; }}
+        .card {{ max-width: 800px; margin: 0 auto; background: #1e293b; border-radius: 16px; padding: 24px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); }}
+        h1 {{ margin: 0 0 8px 0; font-size: 1.5rem; }}
+        .sub {{ color: #94a3b8; margin-bottom: 20px; font-size: 0.95rem; }}
+        .badge {{ background: #0369a1; color: #e0f2fe; padding: 4px 12px; border-radius: 9999px; font-size: 0.85rem; display: inline-block; }}
+        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; text-align: left; }}
+        th {{ background: #334155; padding: 12px; font-weight: 600; color: #cbd5e1; }}
+        a {{ color: #38bdf8; text-decoration: none; display: inline-block; margin-top: 20px; }}
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Monitor Cen: Apartament Deluxe</h1>
-        <div class="badge">Termin: {CHECKIN} do {CHECKOUT}</div>
-        <div style="font-size: 0.85rem; color: #64748b;">Ostatnie sprawdzenie: <strong>{teraz}</strong></div>
-
+    <div class="card">
+        <span class="badge">Termin: {CHECKIN} — {CHECKOUT} (1 noc, 2 os.)</span>
+        <h1>Apartament Delux z 1 sypialnią</h1>
+        <div class="sub">Ostatni odczyt: <strong>{teraz}</strong> | Aktualna stawka: <span style="color: #38bdf8; font-weight: bold;">{cena_wynik}</span></div>
         <table>
             <thead>
                 <tr>
-                    <th>Data i godzina</th>
-                    <th>Termin</th>
-                    <th>Wykryta cena</th>
+                    <th>Data sprawdzenia</th>
+                    <th>Typ apartamentu</th>
+                    <th>Cena</th>
                 </tr>
             </thead>
             <tbody>
-                {wiersze_tabeli}
+                {wiersze}
             </tbody>
         </table>
-
-        <a class="link" href="{URL}" target="_blank">🔗 Przejdź do oferty na stronie hotelu &rarr;</a>
+        <a href="{URL_BOOKING}" target="_blank">&rarr; Przejdź bezpośrednio do rezerwacji</a>
     </div>
 </body>
 </html>"""
 
   with open(HTML_FILE, "w", encoding="utf-8") as f:
-    f.write(html_content)
+    f.write(html)
 
 
 if __name__ == "__main__":
-  sprawdz_cene()
- 
-              
+  pobierz_cene_deluxe()
