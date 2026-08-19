@@ -1,7 +1,9 @@
 import datetime
 import json
 import os
-from playwright.sync_api import sync_playwright
+import re
+from bs4 import BeautifulSoup
+import requests
 
 CHECKIN = "2026-08-29"
 CHECKOUT = "2026-08-30"
@@ -9,30 +11,34 @@ URL = "https://www.poznanapartments.com/pokoje/apartament-delux-z-1-sypialnia"
 DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
+headers = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+        " like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
+}
+
 
 def sprawdz_cene():
   teraz = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-  with sync_playwright() as p:
-    browser = p.chromium.launch(headless=True)
-    page = browser.new_page()
+  try:
+    response = requests.get(URL, headers=headers, timeout=20)
+    soup = BeautifulSoup(response.text, "html.parser")
 
-    try:
-      page.goto(URL, timeout=60000)
-      page.wait_for_load_state("networkidle")
+    # Wyszukanie kwot w zł na stronie
+    tekst_strony = soup.get_text()
+    ceny = re.findall(r"\d+[\s.,]?\d*\s*zł", tekst_strony, re.IGNORECASE)
 
-      elementy_ceny = page.locator("text=/\\d+[\\s.,]?\\d*\\s*zł/i").all()
-      if elementy_ceny:
-        ceny = [elem.inner_text().strip() for elem in elementy_ceny]
-        cena_tekst = ", ".join(ceny[:3])
-      else:
-        cena_tekst = "Brak jednoznacznej stawki"
-      status = "OK"
-    except Exception as e:
-      cena_tekst = f"Blad: {str(e)}"
-      status = "ERROR"
-    finally:
-      browser.close()
+    if ceny:
+      unikalne_ceny = list(dict.fromkeys([c.strip() for c in ceny]))
+      cena_tekst = ", ".join(unikalne_ceny[:3])
+    else:
+      cena_tekst = "Brak jednoznacznej stawki na stronie"
+    status = "OK"
+  except Exception as e:
+    cena_tekst = f"Blad: {str(e)}"
+    status = "ERROR"
 
   # Wczytaj dotychczasowa historie
   historia = []
@@ -43,7 +49,6 @@ def sprawdz_cene():
     except:
       historia = []
 
-  # Dodaj nowy wpis na poczatek listy
   historia.insert(
       0,
       {
@@ -54,11 +59,10 @@ def sprawdz_cene():
       },
   )
 
-  # Zapisz JSON
   with open(DATA_FILE, "w", encoding="utf-8") as f:
     json.dump(historia, f, ensure_ascii=False, indent=2)
 
-  # Generowanie ladnej strony index.html
+  # Generowanie tabeli HTML
   wiersze_tabeli = ""
   for wpis in historia:
     wiersze_tabeli += f"""
@@ -117,3 +121,5 @@ def sprawdz_cene():
 
 if __name__ == "__main__":
   sprawdz_cene()
+ 
+              
