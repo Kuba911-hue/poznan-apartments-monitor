@@ -9,9 +9,7 @@ CHECKIN = "2026-08-29"
 CHECKOUT = "2026-08-30"
 ADULTS = "2"
 
-# Adres silnika rezerwacji z parametrami dat
 URL_BOOKING = f"https://www.poznanapartments.com/rezerwacja?arrival={CHECKIN}&departure={CHECKOUT}&adults={ADULTS}"
-
 DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
@@ -32,11 +30,8 @@ def pobierz_cene_deluxe():
   try:
     response = requests.get(URL_BOOKING, headers=headers, timeout=25)
     soup = BeautifulSoup(response.text, "html.parser")
-
-    # Szukamy bloku/karty zawierającej "Delux" lub "Deluxe"
     tekst_caly = soup.get_text()
 
-    # Wyszukiwanie ceny w sekcji Delux
     znaleziono = False
     for el in soup.find_all(
         ["div", "article", "section", "li"], class_=True
@@ -47,17 +42,14 @@ def pobierz_cene_deluxe():
           or "Apartament Deluxe" in tekst_el
           or "Delux z 1 sypialnią" in tekst_el
       ):
-        # Wyciągamy kwoty w formacie np. 647,40 zł
         ceny = re.findall(
             r"(\d+[\s.,]?\d*)\s*zł", tekst_el, flags=re.IGNORECASE
         )
         if ceny:
-          # Bierzemy najświeższą/główną cenę
           cena_wynik = f"{ceny[-1].strip()} zł"
           znaleziono = True
           break
 
-    # Rezerwowe dopasowanie Regexem jeśli struktura HTML jest zagnieżdżona
     if not znaleziono:
       match = re.search(
           r"Delux[^\n\r]*?(\d+[\s.,]\d{2})\s*zł",
@@ -67,7 +59,6 @@ def pobierz_cene_deluxe():
       if match:
         cena_wynik = f"{match.group(1).strip()} zł"
       else:
-        # Próba bezpośredniego złapania aktualnej promocji
         wszystkie_ceny = re.findall(r"\d+,\d{2}\s*zł", tekst_caly)
         if wszystkie_ceny:
           cena_wynik = f"Wykryte stawki: {', '.join(wszystkie_ceny[:3])}"
@@ -76,15 +67,16 @@ def pobierz_cene_deluxe():
     cena_wynik = f"Błąd: {str(e)}"
     status = "ERROR"
 
-  # 1. Zapis do historii JSON
+  # Wczytanie historii
   historia = []
   if os.path.exists(DATA_FILE):
     try:
       with open(DATA_FILE, "r", encoding="utf-8") as f:
         historia = json.load(f)
-    except:
+    except Exception:
       historia = []
 
+  # Dodanie nowego wpisu
   historia.insert(
       0,
       {
@@ -99,14 +91,18 @@ def pobierz_cene_deluxe():
   with open(DATA_FILE, "w", encoding="utf-8") as f:
     json.dump(historia, f, ensure_ascii=False, indent=2)
 
-  # 2. Generowanie strony index.html
+  # Generowanie tabeli z bezpiecznym odczytem .get()
   wiersze = ""
   for h in historia:
+    data_str = h.get("data", teraz)
+    pokoj_str = h.get("pokoj", "Apartament Delux z 1 sypialnią")
+    cena_str = h.get("cena", "Brak danych")
+
     wiersze += f"""
         <tr>
-            <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{h['data']}</td>
-            <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{h['pokoj']}</td>
-            <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #0284c7; font-size: 1.1rem;">{h['cena']}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #334155;">{data_str}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #334155;">{pokoj_str}</td>
+            <td style="padding: 12px; border-bottom: 1px solid #334155; font-weight: bold; color: #38bdf8; font-size: 1.1rem;">{cena_str}</td>
         </tr>"""
 
   html = f"""<!DOCTYPE html>
