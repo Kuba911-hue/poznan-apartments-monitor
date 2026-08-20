@@ -2,9 +2,7 @@ import datetime
 import json
 import os
 import re
-import time
-from bs4 import BeautifulSoup
-import requests
+from playwright.sync_api import sync_playwright
 
 DATES_TO_CHECK = [
     ("2026-10-03", "2026-10-04"),
@@ -13,88 +11,85 @@ DATES_TO_CHECK = [
     ("2026-10-24", "2026-10-25"),
 ]
 
-ADULTS = "2"
 DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
-headers = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
-        " like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8",
-    "Referer": "https://www.poznanapartments.com/",
-}
 
-
-def sprawdz_cene_dla_terminu(checkin, checkout):
-  # Standardowy adres kierujący do silnika rezerwacji
-  url = f"https://www.poznanapartments.com/rezerwacja?from={checkin}&to={checkout}&adults={ADULTS}&checkin={checkin}&checkout={checkout}&arrival={checkin}&departure={checkout}"
+def sprawdz_cene_dla_daty(page, checkin, checkout):
+  url = f"https://www.poznanapartments.com/rezerwacja?arrival={checkin}&departure={checkout}&adults=2"
+  cena_wynik = "Brak wolnych miejsc"
 
   try:
-    response = requests.get(url, headers=headers, timeout=25)
-    soup = BeautifulSoup(response.text, "html.parser")
-    tekst_caly = soup.get_text(separator=" ")
+    page.goto(url, timeout=45000)
+    # Czekamy na załadowanie kontenera z ofertami
+    page.wait_for_timeout(4000)
 
-    # 1. Próba znalezienia bezpośrednio w kafelku Delux
-    kontenery = soup.find_all(
-        lambda tag: tag.name in ["div", "article", "section", "li"]
-        and any(
-            x in tag.get_text().lower()
-            for x in ["apartament delux", "delux z 1 sypialnią", "deluxe"]
+    # Szukamy kafelka z Deluxem
+    karty = page.locator("div, article, section").all()
+    for karta in karty:
+      tekst = karta.inner_text()
+      if (
+          "Apartament Delux" in tekst or "Delux z 1 sypialnią" in tekst
+      ) and "zł" in tekst:
+        # Pobieramy kwoty z tego konkretnego kafelka
+        ceny = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", tekst)
+        if ceny:
+          cena_wynik = f"{ceny[-1].replace('.', ',')} zł"
+          break
+
+    # Jeśli struktura kafelków jest płaska, wyciągamy bezpośrednio po selektorze tekstu
+    if (
+        cena_wynik == "Brak wolnych miejsc"
+        or cena_wynik == "Brak odczytu"
+    ):
+      delux_elem = page.locator(
+          "text=/Apartament Delux/i"
+      ).first
+      if delux_elem.is_visible():
+        rodzic = delux_elem.locator("xpath=ancestor::div[contains(., 'zł')][1]")
+        ceny_rodzica = re.findall(
+            r"(\d{2,4}[,\.]\d{2})\s*zł", rodzic.inner_text()
         )
-    )
-
-    for k in kontenery:
-      tekst_k = k.get_text(separator=" ")
-      # Dopasowanie kwot z groszami (np. 647,40 zł lub 647.40 zł)
-      dopasowania = re.findall(
-          r"(\d{2,4}[,\.]\d{2})\s*zł", tekst_k, flags=re.IGNORECASE
-      )
-      if dopasowania:
-        unikalne = list(dict.fromkeys(dopasowania))
-        return f"{unikalne[0].replace('.', ',')} zł", url
-
-    # 2. Próba regex w całym tekście strony w okolicy słowa Delux
-    match = re.search(
-        r"Delux[^\n\r]{0,300}?(\d{2,4}[,\.]\d{2})\s*zł",
-        tekst_caly,
-        re.IGNORECASE | re.DOTALL,
-    )
-    if match:
-      return f"{match.group(1).replace('.', ',')} zł", url
-
-    # 3. Jeśli nie znaleziono podziału na pokoje, wyciągnij dostępne kwoty z cennika
-    wszystkie_ceny = re.findall(
-        r"(\d{3}[,\.]\d{2})\s*zł", tekst_caly, flags=re.IGNORECASE
-    )
-    if len(wszystkie_ceny) >= 2:
-      return f"{wszystkie_ceny[1].replace('.', ',')} zł", url
-    elif wszystkie_ceny:
-      return f"{wszystkie_ceny[0].replace('.', ',')} zł", url
-
-    return "Brak wolnych miejsc", url
+        if ceny_rodzica:
+          cena_wynik = f"{ceny_rodzica[-1].replace('.', ',')} zł"
 
   except Exception as e:
-    return f"Błąd: {str(e)}", url
+    cena_wynik = f"Błąd: {str(e)[:30]}"
+
+  return cena_wynik, url
 
 
 def main():
   teraz = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-  biezace_wyniki = []
+  wyniki = []
 
-  for checkin, checkout in DATES_TO_CHECK:
-    cena, url = sprawdz_cene_dla_terminu(checkin, checkout)
-    biezace_wyniki.append({
-        "data_odczytu": teraz,
-        "termin": f"{checkin} do {checkout}",
-        "pokoj": "Apartament Delux z 1 sypialnią",
-        "cena": cena,
-        "url": url,
-    })
-    time.sleep(1)
+  with sync_playwright() as p:
+    browser = p.chromium.launch(
+        headless=True,
+        args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"],
+    )
+    context = browser.new_context(
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+        locale="pl-PL",
+    )
+    page = context.new_page()
 
-  # Czyszczenie starych, błędnych logów i zapis nowej historii
+    for cin, cout in DATES_TO_CHECK:
+      cena, url = sprawdz_cene_dla_daty(page, cin, cout)
+      wyniki.append({
+          "data_odczytu": teraz,
+          "termin": f"{cin} do {cout}",
+          "pokoj": "Apartament Delux z 1 sypialnią",
+          "cena": cena,
+          "url": url,
+      })
+
+    browser.close()
+
+  # Wczytanie historii
   historia = []
   if os.path.exists(DATA_FILE):
     try:
@@ -103,11 +98,16 @@ def main():
     except Exception:
       historia = []
 
-  # Usunięcie wpisów z błędem wyszukiwania
-  historia = [h for h in historia if "Nie znaleziono" not in h.get("cena", "")]
+  # Usunięcie starych wpisów z błędem
+  historia = [
+      h
+      for h in historia
+      if "Brak wolnych" not in h.get("cena", "")
+      and "Nie znaleziono" not in h.get("cena", "")
+  ]
 
-  for wpis in reversed(biezace_wyniki):
-    historia.insert(0, wpis)
+  for w in reversed(wyniki):
+    historia.insert(0, w)
 
   historia = historia[:50]
 
@@ -116,12 +116,12 @@ def main():
 
   # Generowanie kafelków
   karty_aktualne = ""
-  for w in biezace_wyniki:
+  for w in wyniki:
     karty_aktualne += f"""
         <div class="summary-card">
             <div class="date-label">📅 {w['termin']}</div>
             <div class="price-val">{w['cena']}</div>
-            <a href="{w['url']}" target="_blank" class="book-btn">Sprawdź ofertę</a>
+            <a href="{w['url']}" target="_blank" class="book-btn">Rezerwuj</a>
         </div>
         """
 
