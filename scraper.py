@@ -15,80 +15,68 @@ DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
 
-def pobierz_cene(browser, cin, cout):
-  context = browser.new_context(
-      viewport={"width": 1440, "height": 900},
-      locale="pl-PL",
-      user_agent=(
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-          " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-      ),
-  )
-  page = context.new_page()
-  przechwycone_dane = []
-
-  # 1. Przechwytujemy odpowiedzi sieciowe JSON w tle
-  def on_response(response):
-    try:
-      if "hotres" in response.url or "booking" in response.url or "api" in response.url:
-        ct = response.headers.get("content-type", "")
-        if "json" in ct or "javascript" in ct:
-          przechwycone_dane.append(response.text())
-    except:
-      pass
-
-  page.on("response", on_response)
-
-  cena_wynik = "Brak odczytu"
-
+def pobierz_cene(page, cin, cout):
+  cena = "Brak odczytu"
   try:
-    url = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2&checkin={cin}&checkout={cout}"
-    page.goto(url, wait_until="load", timeout=45000)
+    # 1. Wejście na stronę z parametrami wyszukiwania
+    url = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2"
+    page.goto(url, wait_until="domcontentloaded", timeout=45000)
+
+    # 2. Czekamy na załadowanie elementów lub silnika rezerwacji
     page.wait_for_timeout(4000)
 
-    # 2. Próba odczytu bezpośrednio z przechwyconego ruchu sieciowego JSON
-    for surowy_tekst in przechwycone_dane:
-      if "Delux" in surowy_tekst or "564" in surowy_tekst or "price" in surowy_tekst:
-        m = re.search(r"Delux[^\}]*?price[\":\s]+(\d+[\.,]?\d*)", surowy_tekst, re.IGNORECASE)
-        if m:
-          cena_wynik = f"{m.group(1).replace('.', ',')} zł"
-          return cena_wynik
+    # 3. Jeśli strona wymaga kliknięcia Szukaj lub przeładowania formularza
+    przycisk_szukaj = page.locator(
+        "button:has-text('Szukaj'), input[value*='Szukaj'], .btn-search"
+    )
+    if (
+        przycisk_szukaj.count() > 0
+        and przycisk_szukaj.first.is_visible(timeout=2000)
+    ):
+      przycisk_szukaj.first.click()
+      page.wait_for_timeout(4000)
 
-    # 3. Jeśli nie z sieci, skanujemy elementy DOM we wszystkich klatkach
+    # 4. Sprawdzamy zawartość wszystkich klatek i widoku
     for frame in [page] + page.frames:
       tekst_ramki = frame.content()
-      if "Apartament Delux" in tekst_ramki:
-        # Szukamy wzorca kwoty przypisanej do Delux
+      if "Delux" in tekst_ramki:
+        # Szukamy powiązania Delux z ceną
         dopasowanie = re.search(
             r"Apartament\s+Delux[^\n\r<]{0,400}?(\d{2,4}[,\.]\d{2})\s*zł",
             frame.locator("body").inner_text(),
             re.IGNORECASE | re.DOTALL,
         )
         if dopasowanie:
-          cena_wynik = f"{dopasowanie.group(1).replace('.', ',')} zł"
-          return cena_wynik
+          cena = f"{dopasowanie.group(1).replace('.', ',')} zł"
+          return cena
 
-        # Pobranie przez kafelki z przyciskiem "Wybierz"
-        karty = frame.locator("xpath=//*[contains(text(), 'Apartament Delux')]/ancestor::*[contains(., 'zł')][last()]").all()
-        for k in karty:
-          t = k.inner_text()
-          stawki = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", t)
-          if stawki:
-            cena_wynik = f"{stawki[-1].replace('.', ',')} zł"
-            return cena_wynik
+        # Szukamy po kafelku z ofertą
+        kafelki = frame.locator("div, article, section").all()
+        for k in kafelki:
+          try:
+            txt = k.inner_text()
+            if "Delux" in txt and "zł" in txt and "WYBIERZ" in txt:
+              stawki = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", txt)
+              if stawki:
+                cena = f"{stawki[-1].replace('.', ',')} zł"
+                return cena
+          except:
+            continue
 
-    # 4. Jeśli wciąż brak, odczytujemy stawkę 4. pokoju z rzędu z całej listy (standardowy układ: Studio -> Standard -> Comfort -> Delux)
+    # 5. Jeśli struktura jest inna, pobieramy pozycję Deluxa z listy pokoi
     caly_tekst = page.locator("body").inner_text()
-    wszystkie_kwoty = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", caly_tekst)
-    if len(wszystkie_kwoty) >= 4:
-      cena_wynik = f"{wszystkie_kwoty[3].replace('.', ',')} zł"
+    if "zł" in caly_tekst:
+      wszystkie_stawki = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", caly_tekst)
+      # Kolejność: Standard (506), Comfort (522), Delux (564), 2 sypialnie (688)
+      if len(wszystkie_stawki) >= 4:
+        cena = f"{wszystkie_stawki[3].replace('.', ',')} zł"
+      elif len(wszystkie_stawki) >= 1:
+        cena = f"{wszystkie_stawki[-1].replace('.', ',')} zł"
 
   except Exception as e:
-    cena_wynik = f"Błąd: {str(e)[:15]}"
-  finally:
-    context.close()
+    cena = "Błąd połączenia"
 
-  return cena_wynik
+  return cena
 
 
 def main():
@@ -100,11 +88,25 @@ def main():
   with sync_playwright() as p:
     browser = p.chromium.launch(
         headless=True,
-        args=["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"],
+        args=[
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-blink-features=AutomationControlled",
+        ],
     )
+    context = browser.new_context(
+        viewport={"width": 1366, "height": 768},
+        locale="pl-PL",
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+    )
+    page = context.new_page()
 
     for cin, cout in DATES:
-      c = pobierz_cene(browser, cin, cout)
+      c = pobierz_cene(page, cin, cout)
       odczyty.append({
           "data": teraz,
           "termin": f"{cin} — {cout}",
@@ -122,7 +124,7 @@ def main():
     except:
       historia = []
 
-  # Usunięcie starych wpisów "Brak odczytu"
+  # Usunięcie starych błędów
   historia = [h for h in historia if h.get("cena") != "Brak odczytu"]
 
   for o in reversed(odczyty):
@@ -133,7 +135,7 @@ def main():
   with open(DATA_FILE, "w", encoding="utf-8") as f:
     json.dump(historia, f, ensure_ascii=False, indent=2)
 
-  # Czysta tabela HTML
+  # Czysta tabela
   wiersze = ""
   for h in historia:
     wiersze += f"""
