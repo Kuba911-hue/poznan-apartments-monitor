@@ -20,61 +20,60 @@ DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
 
-def pobierz_cene(cin, cout):
-  # Format daty dla Hotres (YYYY-MM-DD oraz DD-MM-YYYY)
-  d_cin = datetime.datetime.strptime(cin, "%Y-%m-%d").strftime("%d-%m-%Y")
-  d_cout = datetime.datetime.strptime(cout, "%Y-%m-%d").strftime("%d-%m-%Y")
+def pobierz_cene_profitroom(cin, cout):
+  if not API_KEY:
+    return "Brak klucza API"
 
-  # Bezpośredni URL do silnika rezerwacji Hotres z poprawnymi parametrami
-  target_url = f"https://panel.hotres.pl/v4_step1?oid=3292&lang=pl&arrival={cin}&departure={cout}&adults=2&from={d_cin}&to={d_cout}"
+  # Oficjalny format parametrów dla silnika Profitroom
+  target_url = (
+      "https://www.poznanapartments.com/rezerwacja"
+      f"?check-in={cin}&check-out={cout}&adults=2&checkin={cin}&checkout={cout}&rooms=1"
+  )
+  encoded_url = quote_plus(target_url)
 
-  if API_KEY:
-    proxy_url = f"http://api.scraperapi.com?api_key={API_KEY}&url={quote_plus(target_url)}&render=true&country_code=pl"
-  else:
-    proxy_url = target_url
-
-  headers = {
-      "User-Agent": (
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
-          " like Gecko) Chrome/124.0.0.0 Safari/537.36"
-      ),
-      "Accept-Language": "pl-PL,pl;q=0.9",
-  }
+  # Zapytanie przez ScraperAPI z pełnym renderowaniem JavaScriptu
+  proxy_url = f"http://api.scraperapi.com?api_key={API_KEY}&url={encoded_url}&render=true&country_code=pl"
 
   try:
-    resp = requests.get(proxy_url, headers=headers, timeout=60)
+    resp = requests.get(proxy_url, timeout=75)
     html_text = resp.text
     soup = BeautifulSoup(html_text, "html.parser")
 
     # 1. Szukanie w kontenerze z Apartamentem Delux
-    for el in soup.find_all(["div", "article", "section", "li", "tr"]):
+    for el in soup.find_all(["div", "article", "section", "li"]):
       t = el.get_text(separator=" ")
-      if "Apartament Delux" in t or "Delux z 1 sypialnią" in t:
+      if (
+          "Apartament Delux" in t or "Delux z 1 sypialnią" in t
+      ) and "WYBIERZ" in t:
         kwoty = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", t)
         if kwoty:
           return f"{kwoty[-1].replace('.', ',')} zł"
 
-    # 2. Szukanie wyrażeniem regularnym w całym kodzie
+    # 2. Szukanie wyrażeniem regularnym w wyrenderowanym tekście
     m = re.search(
-        r"Apartament\s+Delux[^\n\r<]{0,350}?(\d{3,4}[,\.]\d{2})\s*zł",
+        r"Apartament\s+Delux[^\n\r<]{0,400}?(\d{3,4}[,\.]\d{2})\s*zł",
         html_text,
         re.IGNORECASE | re.DOTALL,
     )
     if m:
       return f"{m.group(1).replace('.', ',')} zł"
 
-    # 3. Jeśli są kafelki w standardowym układzie: Studio, Standard, Comfort, Delux
-    wszystkie = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", soup.get_text())
-    unikalne = []
-    for k in wszystkie:
-      k_norm = k.replace(".", ",")
-      if k_norm not in unikalne and float(k_norm.replace(",", ".")) < 2500:
-        unikalne.append(k_norm)
-
-    if len(unikalne) >= 4:
-      return f"{unikalne[3]} zł"
-    elif unikalne:
-      return f"{unikalne[-1]} zł"
+    # 3. Jeśli są jakiekolwiek kafelki Profitroom ze zniżkami
+    tekst_caly = soup.get_text()
+    if "zł" in tekst_caly:
+      stawki = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", tekst_caly)
+      # Filtrujemy tylko realne stawki jednostkowe za noc (< 2000 zł)
+      prawidlowe = [
+          s.replace(".", ",")
+          for s in stawki
+          if float(s.replace(",", ".")) < 2000
+      ]
+      unikalne = list(dict.fromkeys(prawidlowe))
+      if len(unikalne) >= 5:
+        # Delux jest 5. pozycją na liście (Studio, Studio Fam, Stand, Comf, Delux)
+        return f"{unikalne[4]} zł"
+      elif unikalne:
+        return f"{unikalne[-1]} zł"
 
     return "Brak wolnych"
 
@@ -89,7 +88,7 @@ def main():
   odczyty = []
 
   for cin, cout in DATES:
-    c = pobierz_cene(cin, cout)
+    c = pobierz_cene_profitroom(cin, cout)
     odczyty.append({
         "data": teraz,
         "termin": f"{cin} — {cout}",
@@ -105,7 +104,7 @@ def main():
     except:
       historia = []
 
-  # Usunięcie wszystkich dotychczasowych błędnych wpisów
+  # Czyścimy wszystkie dotychczasowe błędy i nieudane próby
   historia = [
       h
       for h in historia
