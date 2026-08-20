@@ -25,9 +25,7 @@ jobs:
           python-version: '3.11'
 
       - name: Instalacja zaleznosci
-        run: |
-          pip install -r requirements.txt
-          playwright install --with-deps chromium
+        run: pip install -r requirements.txt
 
       - name: Uruchomienie skryptu sprawdzajacego
         run: python scraper.py
