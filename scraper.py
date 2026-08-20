@@ -15,63 +15,75 @@ DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
 
-def pobierz_cene(browser, cin, cout):
-  context = browser.new_context(
-      viewport={"width": 1440, "height": 900},
-      locale="pl-PL",
-      user_agent=(
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-          " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-      ),
-  )
-  page = context.new_page()
+def pobierz_cene(page, cin, cout):
+  url = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2"
   cena = "Brak odczytu"
 
   try:
-    url = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2"
-    page.goto(url, wait_until="domcontentloaded", timeout=45000)
+    page.goto(url, timeout=60000)
 
-    # Czekamy na załadowanie ramek i ofert
-    page.wait_for_timeout(6000)
+    # Czekamy na załadowanie dowolnej ceny na ekranie (do 15 sek)
+    try:
+      page.wait_for_selector("text=/zł/i", timeout=15000)
+    except:
+      page.wait_for_timeout(5000)
 
-    # Przeszukujemy stronę główną oraz wszystkie ramki (iframe)
-    wszystkie_ramki = [page] + page.frames
+    # Przeszukujemy dokument i ramki bezpośrednio przez JS przeglądarki
+    skrypt_js = """() => {
+            const szukajKwoty = (doc) => {
+                const elements = Array.from(doc.querySelectorAll('*'));
+                for (let el of elements) {
+                    if (el.children.length === 0 && /Delux/i.test(el.textContent)) {
+                        let parent = el.closest('div, article, section, li');
+                        while (parent && parent !== doc.body) {
+                            const text = parent.innerText || '';
+                            if (text.includes('zł') && (text.includes('WYBIERZ') || text.includes('Wybierz') || text.includes('od '))) {
+                                return text;
+                            }
+                            parent = parent.parentElement;
+                        }
+                    }
+                }
+                return null;
+            };
 
-    for target in wszystkie_ramki:
-      delux = target.locator("text=/Apartament Delux/i")
-      if delux.count() > 0:
-        # Znaleziono sekcję Delux w tej ramce
-        el = delux.first
-        # Szukamy kafelka z ceną
-        karta = el.locator("xpath=ancestor::*[contains(., 'zł')][last()]")
-        tekst = karta.inner_text() if karta.count() > 0 else target.content()
+            let znalezionyTekst = szukajKwoty(document);
+            if (znalezionyTekst) return znalezionyTekst;
 
-        # Wyciągamy kwotę z kafelka
-        stawki = re.findall(
-            r"(\d{2,4}[,\.]\d{2})\s*zł", tekst, flags=re.IGNORECASE
+            const iframes = document.querySelectorAll('iframe');
+            for (let f of iframes) {
+                try {
+                    let fDoc = f.contentDocument || f.contentWindow.document;
+                    if (fDoc) {
+                        let txt = szukajKwoty(fDoc);
+                        if (txt) return txt;
+                    }
+                } catch(e) {}
+            }
+            return document.body.innerText || '';
+        }"""
+
+    tekst_karty = page.evaluate(skrypt_js)
+
+    if tekst_karty:
+      # Szukamy kwot z groszami np. 564,40 zł
+      stawki = re.findall(
+          r"(\d{2,4}[,\.]\d{2})\s*zł", tekst_karty, flags=re.IGNORECASE
+      )
+      if stawki:
+        cena = f"{stawki[-1].replace('.', ',')} zł"
+      else:
+        # Fallback na regex z całego tekstu
+        m = re.search(
+            r"Delux[^\n\r]{0,300}?(\d{2,4}[,\.]\d{2})\s*zł",
+            tekst_karty,
+            re.IGNORECASE | re.DOTALL,
         )
-        if stawki:
-          cena = f"{stawki[-1].replace('.', ',')} zł"
-          break
-
-    # Jeśli kafelki są inaczej zagnieżdżone w ramce
-    if cena == "Brak odczytu":
-      for target in wszystkie_ramki:
-        tekst_ramki = target.locator("body").inner_text()
-        if "Apartament Delux" in tekst_ramki and "zł" in tekst_ramki:
-          match = re.search(
-              r"Apartament\s+Delux[^\n\r]{0,350}?(\d{2,4}[,\.]\d{2})\s*zł",
-              tekst_ramki,
-              re.IGNORECASE | re.DOTALL,
-          )
-          if match:
-            cena = f"{match.group(1).replace('.', ',')} zł"
-            break
+        if m:
+          cena = f"{m.group(1).replace('.', ',')} zł"
 
   except Exception as e:
     cena = f"Błąd: {str(e)[:20]}"
-  finally:
-    context.close()
 
   return cena
 
@@ -87,9 +99,18 @@ def main():
         headless=True,
         args=["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"],
     )
+    context = browser.new_context(
+        viewport={"width": 1440, "height": 900},
+        locale="pl-PL",
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+    )
+    page = context.new_page()
 
     for cin, cout in DATES:
-      c = pobierz_cene(browser, cin, cout)
+      c = pobierz_cene(page, cin, cout)
       odczyty.append({
           "data": teraz,
           "termin": f"{cin} — {cout}",
@@ -98,7 +119,7 @@ def main():
 
     browser.close()
 
-  # Wczytanie historii
+  # Wczytanie i czyszczenie historii
   historia = []
   if os.path.exists(DATA_FILE):
     try:
@@ -107,7 +128,7 @@ def main():
     except:
       historia = []
 
-  # Usunięcie starych wpisów "Brak odczytu"
+  # Usunięcie starych błędów
   historia = [h for h in historia if h.get("cena") != "Brak odczytu"]
 
   for o in reversed(odczyty):
@@ -118,7 +139,7 @@ def main():
   with open(DATA_FILE, "w", encoding="utf-8") as f:
     json.dump(historia, f, ensure_ascii=False, indent=2)
 
-  # Czysta tabela
+  # Czysta tabela HTML
   wiersze = ""
   for h in historia:
     wiersze += f"""
