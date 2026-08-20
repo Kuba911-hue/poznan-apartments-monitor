@@ -2,7 +2,11 @@ import datetime
 import json
 import os
 import re
-from playwright.sync_api import sync_playwright
+from urllib.parse import quote_plus
+from bs4 import BeautifulSoup
+import requests
+
+API_KEY = os.environ.get("SCRAPER_API_KEY")
 
 DATES = [
     ("2026-10-03", "2026-10-04"),
@@ -15,68 +19,50 @@ DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
 
-def pobierz_cene(page, cin, cout):
-  cena = "Brak odczytu"
+def pobierz_cene(cin, cout):
+  if not API_KEY:
+    return "Brak SCRAPER_API_KEY"
+
+  docelowy_url = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2"
+  encoded_url = quote_plus(docelowy_url)
+
+  # ScraperAPI z włączonym renderowaniem JavaScriptu i polską geolokalizacją
+  proxy_url = f"http://api.scraperapi.com?api_key={API_KEY}&url={encoded_url}&render=true&country_code=pl"
+
   try:
-    # 1. Wejście na stronę z parametrami wyszukiwania
-    url = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2"
-    page.goto(url, wait_until="domcontentloaded", timeout=45000)
+    response = requests.get(proxy_url, timeout=60)
+    tekst = response.text
 
-    # 2. Czekamy na załadowanie elementów lub silnika rezerwacji
-    page.wait_for_timeout(4000)
-
-    # 3. Jeśli strona wymaga kliknięcia Szukaj lub przeładowania formularza
-    przycisk_szukaj = page.locator(
-        "button:has-text('Szukaj'), input[value*='Szukaj'], .btn-search"
+    # 1. Szukanie wprost Apartamentu Delux
+    match = re.search(
+        r"Apartament\s+Delux[^\n\r<]{0,400}?(\d{2,4}[,\.]\d{2})\s*zł",
+        tekst,
+        re.IGNORECASE | re.DOTALL,
     )
-    if (
-        przycisk_szukaj.count() > 0
-        and przycisk_szukaj.first.is_visible(timeout=2000)
-    ):
-      przycisk_szukaj.first.click()
-      page.wait_for_timeout(4000)
+    if match:
+      return f"{match.group(1).replace('.', ',')} zł"
 
-    # 4. Sprawdzamy zawartość wszystkich klatek i widoku
-    for frame in [page] + page.frames:
-      tekst_ramki = frame.content()
-      if "Delux" in tekst_ramki:
-        # Szukamy powiązania Delux z ceną
-        dopasowanie = re.search(
-            r"Apartament\s+Delux[^\n\r<]{0,400}?(\d{2,4}[,\.]\d{2})\s*zł",
-            frame.locator("body").inner_text(),
-            re.IGNORECASE | re.DOTALL,
-        )
-        if dopasowanie:
-          cena = f"{dopasowanie.group(1).replace('.', ',')} zł"
-          return cena
+    # 2. Szukanie po strukturze kafelków
+    soup = BeautifulSoup(tekst, "html.parser")
+    for el in soup.find_all(["div", "article", "section"]):
+      t = el.get_text(separator=" ")
+      if (
+          "Delux" in t
+          and "zł" in t
+          and ("WYBIERZ" in t or "Wybierz" in t or "od " in t)
+      ):
+        stawki = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", t)
+        if stawki:
+          return f"{stawki[-1].replace('.', ',')} zł"
 
-        # Szukamy po kafelku z ofertą
-        kafelki = frame.locator("div, article, section").all()
-        for k in kafelki:
-          try:
-            txt = k.inner_text()
-            if "Delux" in txt and "zł" in txt and "WYBIERZ" in txt:
-              stawki = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", txt)
-              if stawki:
-                cena = f"{stawki[-1].replace('.', ',')} zł"
-                return cena
-          except:
-            continue
+    # 3. Jeśli struktura pokoi jest standardowa (Studio, Standard, Comfort, Delux...)
+    wszystkie = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", tekst)
+    if len(wszystkie) >= 4:
+      return f"{wszystkie[3].replace('.', ',')} zł"
 
-    # 5. Jeśli struktura jest inna, pobieramy pozycję Deluxa z listy pokoi
-    caly_tekst = page.locator("body").inner_text()
-    if "zł" in caly_tekst:
-      wszystkie_stawki = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", caly_tekst)
-      # Kolejność: Standard (506), Comfort (522), Delux (564), 2 sypialnie (688)
-      if len(wszystkie_stawki) >= 4:
-        cena = f"{wszystkie_stawki[3].replace('.', ',')} zł"
-      elif len(wszystkie_stawki) >= 1:
-        cena = f"{wszystkie_stawki[-1].replace('.', ',')} zł"
-
+    return "Brak wolnych"
   except Exception as e:
-    cena = "Błąd połączenia"
-
-  return cena
+    return f"Błąd: {str(e)[:15]}"
 
 
 def main():
@@ -85,37 +71,15 @@ def main():
   ).strftime("%Y-%m-%d %H:%M:%S")
   odczyty = []
 
-  with sync_playwright() as p:
-    browser = p.chromium.launch(
-        headless=True,
-        args=[
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-blink-features=AutomationControlled",
-        ],
-    )
-    context = browser.new_context(
-        viewport={"width": 1366, "height": 768},
-        locale="pl-PL",
-        user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        ),
-    )
-    page = context.new_page()
+  for cin, cout in DATES:
+    c = pobierz_cene(cin, cout)
+    odczyty.append({
+        "data": teraz,
+        "termin": f"{cin} — {cout}",
+        "cena": c,
+    })
 
-    for cin, cout in DATES:
-      c = pobierz_cene(page, cin, cout)
-      odczyty.append({
-          "data": teraz,
-          "termin": f"{cin} — {cout}",
-          "cena": c,
-      })
-
-    browser.close()
-
-  # Wczytanie historii
+  # Historia
   historia = []
   if os.path.exists(DATA_FILE):
     try:
@@ -124,8 +88,8 @@ def main():
     except:
       historia = []
 
-  # Usunięcie starych błędów
-  historia = [h for h in historia if h.get("cena") != "Brak odczytu"]
+  # Usunięcie starych wpisów z błędami
+  historia = [h for h in historia if "Brak odczytu" not in h.get("cena", "")]
 
   for o in reversed(odczyty):
     historia.insert(0, o)
@@ -135,7 +99,7 @@ def main():
   with open(DATA_FILE, "w", encoding="utf-8") as f:
     json.dump(historia, f, ensure_ascii=False, indent=2)
 
-  # Czysta tabela
+  # Generowanie widoku HTML
   wiersze = ""
   for h in historia:
     wiersze += f"""
