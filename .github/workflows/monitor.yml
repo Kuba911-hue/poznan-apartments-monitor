@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 1
+          persist-credentials: true
 
       - name: Konfiguracja Pythona
         uses: actions/setup-python@v5
@@ -25,9 +25,7 @@ jobs:
           python-version: '3.11'
 
       - name: Instalacja zaleznosci
-        run: |
-          pip install -r requirements.txt
-          playwright install --with-deps chromium
+        run: pip install -r requirements.txt
 
       - name: Uruchomienie skryptu sprawdzajacego
         run: python scraper.py
@@ -36,8 +34,6 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          git reset --soft origin/main
-          git add index.html dane.json
+          git add index.html dane.json || true
           git commit -m "Aktualizacja cen i strony HTML [skip ci]" || exit 0
           git push origin main
