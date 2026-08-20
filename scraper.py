@@ -6,7 +6,6 @@ import time
 from bs4 import BeautifulSoup
 import requests
 
-# Lista terminów do monitorowania (weekend po weekendzie)
 DATES_TO_CHECK = [
     ("2026-10-03", "2026-10-04"),
     ("2026-10-10", "2026-10-11"),
@@ -23,42 +22,58 @@ headers = {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
         " like Gecko) Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Accept-Language": "pl-PL,pl;q=0.9",
+    "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8",
     "Referer": "https://www.poznanapartments.com/",
 }
 
 
 def sprawdz_cene_dla_terminu(checkin, checkout):
-  url = f"https://www.poznanapartments.com/rezerwacja?arrival={checkin}&departure={checkout}&adults={ADULTS}"
+  # Standardowy adres kierujący do silnika rezerwacji
+  url = f"https://www.poznanapartments.com/rezerwacja?from={checkin}&to={checkout}&adults={ADULTS}&checkin={checkin}&checkout={checkout}&arrival={checkin}&departure={checkout}"
+
   try:
     response = requests.get(url, headers=headers, timeout=25)
     soup = BeautifulSoup(response.text, "html.parser")
+    tekst_caly = soup.get_text(separator=" ")
 
+    # 1. Próba znalezienia bezpośrednio w kafelku Delux
     kontenery = soup.find_all(
-        lambda tag: tag.name in ["div", "article", "section"]
-        and "delux" in tag.get_text().lower()
+        lambda tag: tag.name in ["div", "article", "section", "li"]
+        and any(
+            x in tag.get_text().lower()
+            for x in ["apartament delux", "delux z 1 sypialnią", "deluxe"]
+        )
     )
 
-    znalezione_kwoty = []
     for k in kontenery:
-      tekst = k.get_text(separator=" ")
-      if "Apartament Delux z 1 sypialnią" in tekst or "Delux" in tekst:
-        dopasowania = re.findall(
-            r"(\d{2,4}[,\.]\d{2})\s*zł", tekst, flags=re.IGNORECASE
-        )
-        if dopasowania:
-          znalezione_kwoty.extend(dopasowania)
+      tekst_k = k.get_text(separator=" ")
+      # Dopasowanie kwot z groszami (np. 647,40 zł lub 647.40 zł)
+      dopasowania = re.findall(
+          r"(\d{2,4}[,\.]\d{2})\s*zł", tekst_k, flags=re.IGNORECASE
+      )
+      if dopasowania:
+        unikalne = list(dict.fromkeys(dopasowania))
+        return f"{unikalne[0].replace('.', ',')} zł", url
 
-    if znalezione_kwoty:
-      unikalne = list(dict.fromkeys(znalezione_kwoty))
-      return f"{unikalne[0].replace('.', ',')} zł", url
-    else:
-      wszystkie = re.findall(r"(\d{3}[,\.]\d{2})\s*zł", soup.get_text())
-      if len(wszystkie) >= 2:
-        return f"{wszystkie[1].replace('.', ',')} zł", url
-      elif wszystkie:
-        return f"{wszystkie[0].replace('.', ',')} zł", url
-      return "Brak wolnych / Nie znaleziono", url
+    # 2. Próba regex w całym tekście strony w okolicy słowa Delux
+    match = re.search(
+        r"Delux[^\n\r]{0,300}?(\d{2,4}[,\.]\d{2})\s*zł",
+        tekst_caly,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if match:
+      return f"{match.group(1).replace('.', ',')} zł", url
+
+    # 3. Jeśli nie znaleziono podziału na pokoje, wyciągnij dostępne kwoty z cennika
+    wszystkie_ceny = re.findall(
+        r"(\d{3}[,\.]\d{2})\s*zł", tekst_caly, flags=re.IGNORECASE
+    )
+    if len(wszystkie_ceny) >= 2:
+      return f"{wszystkie_ceny[1].replace('.', ',')} zł", url
+    elif wszystkie_ceny:
+      return f"{wszystkie_ceny[0].replace('.', ',')} zł", url
+
+    return "Brak wolnych miejsc", url
 
   except Exception as e:
     return f"Błąd: {str(e)}", url
@@ -67,8 +82,6 @@ def sprawdz_cene_dla_terminu(checkin, checkout):
 def main():
   teraz = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
   biezace_wyniki = []
-
-  print(f"[{teraz}] Rozpoczynam sprawdzanie terminów w październiku...")
 
   for checkin, checkout in DATES_TO_CHECK:
     cena, url = sprawdz_cene_dla_terminu(checkin, checkout)
@@ -79,9 +92,9 @@ def main():
         "cena": cena,
         "url": url,
     })
-    time.sleep(1)  # Krótka pauza między zapytaniami
+    time.sleep(1)
 
-  # Wczytanie historii
+  # Czyszczenie starych, błędnych logów i zapis nowej historii
   historia = []
   if os.path.exists(DATA_FILE):
     try:
@@ -90,24 +103,25 @@ def main():
     except Exception:
       historia = []
 
-  # Dodajemy nowe odczyty na początek historii
+  # Usunięcie wpisów z błędem wyszukiwania
+  historia = [h for h in historia if "Nie znaleziono" not in h.get("cena", "")]
+
   for wpis in reversed(biezace_wyniki):
     historia.insert(0, wpis)
 
-  # Zachowujemy maksymalnie 60 ostatnich rekordów w pliku
-  historia = historia[:60]
+  historia = historia[:50]
 
   with open(DATA_FILE, "w", encoding="utf-8") as f:
     json.dump(historia, f, ensure_ascii=False, indent=2)
 
-  # Generowanie wierszy podsumowania aktualnego
+  # Generowanie kafelków
   karty_aktualne = ""
   for w in biezace_wyniki:
     karty_aktualne += f"""
         <div class="summary-card">
             <div class="date-label">📅 {w['termin']}</div>
             <div class="price-val">{w['cena']}</div>
-            <a href="{w['url']}" target="_blank" class="book-btn">Rezerwuj</a>
+            <a href="{w['url']}" target="_blank" class="book-btn">Sprawdź ofertę</a>
         </div>
         """
 
@@ -147,8 +161,7 @@ def main():
     <div class="container">
         <div class="card">
             <h1>Apartament Delux z 1 sypialnią – Październik 2026</h1>
-            <div class="sub">Ostatnie automatyczne sprawdzenie: <strong>{teraz}</strong> (2 dorosłych)</div>
-            
+            <div class="sub">Ostatnie sprawdzenie: <strong>{teraz}</strong> (2 dorosłych)</div>
             <div class="grid">
                 {karty_aktualne}
             </div>
@@ -175,8 +188,6 @@ def main():
 
   with open(HTML_FILE, "w", encoding="utf-8") as f:
     f.write(html)
-
-  print("Zapisano raport dla wszystkich terminów.")
 
 
 if __name__ == "__main__":
