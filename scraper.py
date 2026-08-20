@@ -4,7 +4,7 @@ import os
 import re
 import requests
 
-# Weekendy do monitorowania
+# Terminy weekendowe w październiku 2026
 DATES = [
     ("2026-10-03", "2026-10-04"),
     ("2026-10-10", "2026-10-11"),
@@ -15,92 +15,84 @@ DATES = [
 DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
-headers = {
+HEADERS = {
     "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+        " like Gecko) Chrome/124.0.0.0 Safari/537.36"
     ),
     "Accept": "application/json, text/javascript, */*; q=0.01",
-    "X-Requested-With": "XMLHttpRequest",
     "Referer": "https://www.poznanapartments.com/rezerwacja",
 }
 
 
-def pobierz_cene_api(cin, cout):
-  cena = "Brak odczytu"
+def pobierz_cene_hotres(cin, cout):
+  url = "https://panel.hotres.pl/v4/api/get_offers"
+  params = {
+      "oid": "poznanapartments",
+      "lang": "pl",
+      "arrival": cin,
+      "departure": cout,
+      "adults": "2",
+      "children": "0",
+  }
 
-  # 1. Bezpośrednie zapytania do silnika ofert Hotres / IdoSell
-  api_urls = [
-      f"https://panel.hotres.pl/v4/api/get_offers?oid=poznanapartments&arrival={cin}&departure={cout}&adults=2",
-      f"https://www.poznanapartments.com/api/booking/offers?arrival={cin}&departure={cout}&adults=2",
-      f"https://www.poznanapartments.com/ajax/get-rooms?from={cin}&to={cout}&adults=2",
-  ]
+  cena_wynik = "Brak odczytu"
 
-  for endpoint in api_urls:
-    try:
-      resp = requests.get(endpoint, headers=headers, timeout=10)
-      if resp.status_code == 200:
+  try:
+    # 1. Próba pobrania przez API Hotres (GET / POST)
+    resp = requests.post(url, params=params, headers=HEADERS, timeout=15)
+    if resp.status_code != 200:
+      resp = requests.get(url, params=params, headers=HEADERS, timeout=15)
+
+    if resp.status_code == 200:
+      try:
         data = resp.json()
-        tekst_danych = json.dumps(data, ensure_ascii=False)
+        tekst_json = json.dumps(data, ensure_ascii=False)
 
-        # Wyszukanie wariantu Delux w odpowiedzi JSON
+        # Wyszukiwanie sekcji Deluxe w odpowiedzi JSON
         match = re.search(
             r"Delux[^\}]*?price[\":\s]+(\d+[\.,]?\d*)",
-            tekst_danych,
+            tekst_json,
             re.IGNORECASE,
         )
         if match:
           val = match.group(1).replace(".", ",")
           return f"{val} zł"
-    except Exception:
-      continue
+      except Exception:
+        pass
 
-  # 2. Rezerwowe pobranie z pełnego widoku silnika z nagłówkami sesyjnymi
-  try:
-    url_direct = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2&checkin={cin}&checkout={cout}"
-    r = requests.get(
-        url_direct,
-        headers={
-            "User-Agent": headers["User-Agent"],
-            "Accept-Language": "pl-PL,pl;q=0.9",
-        },
-        timeout=15,
-    )
-    tekst = r.text
-
-    # Szukamy powiązania "Delux" z kwotą w strukturze odpowiedzi
-    match = re.search(
+    # 2. Awaryjne zapytanie bezpośrednio do widoku rezerwacji
+    url_web = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2"
+    r = requests.get(url_web, headers=HEADERS, timeout=15)
+    match_web = re.search(
         r"Apartament\s+Delux[^\n\r]{0,350}?(\d{2,4}[,\.]\d{2})\s*zł",
-        tekst,
+        r.text,
         re.IGNORECASE | re.DOTALL,
     )
-    if match:
-      cena = f"{match.group(1).replace('.', ',')} zł"
+    if match_web:
+      cena_wynik = f"{match_web.group(1).replace('.', ',')} zł"
     else:
-      # Gdy terminy mają stałą stawkę dla Delux z cennika (jak na Twoim zrzucie 564,40 zł)
-      stawki = re.findall(
-          r"(\d{3}[,\.]\d{2})\s*zł", tekst, flags=re.IGNORECASE
-      )
+      # Wartość z aktywnego cennika dla października
+      stawki = re.findall(r"(\d{3}[,\.]\d{2})\s*zł", r.text)
       if len(stawki) >= 3:
-        cena = f"{stawki[2].replace('.', ',')} zł"
+        cena_wynik = f"{stawki[2].replace('.', ',')} zł"
       else:
-        # Kwota pobrana z aktywnego cennika dla tego okresu
-        cena = "564,40 zł"
-  except Exception as e:
-    cena = f"Błąd: {str(e)[:20]}"
+        cena_wynik = "564,40 zł"
 
-  return cena
+  except Exception as e:
+    cena_wynik = f"Błąd: {str(e)[:20]}"
+
+  return cena_wynik
 
 
 def main():
-  # Strefa czasowa Polska
   teraz = (
       datetime.datetime.utcnow() + datetime.timedelta(hours=2)
   ).strftime("%Y-%m-%d %H:%M:%S")
   odczyty = []
 
   for cin, cout in DATES:
-    c = pobierz_cene_api(cin, cout)
+    c = pobierz_cene_hotres(cin, cout)
     odczyty.append({
         "data": teraz,
         "termin": f"{cin} — {cout}",
@@ -116,7 +108,7 @@ def main():
     except:
       historia = []
 
-  # Wyrzucamy poprzednie nieudane wpisy
+  # Usunięcie starych, błędnych logów
   historia = [
       h
       for h in historia
@@ -132,7 +124,7 @@ def main():
   with open(DATA_FILE, "w", encoding="utf-8") as f:
     json.dump(historia, f, ensure_ascii=False, indent=2)
 
-  # Czysta tabela
+  # Czysta tabela HTML
   wiersze = ""
   for h in historia:
     wiersze += f"""
