@@ -2,7 +2,6 @@ import datetime
 import json
 import os
 import re
-from urllib.parse import quote_plus
 from bs4 import BeautifulSoup
 import requests
 
@@ -20,56 +19,62 @@ HTML_FILE = "index.html"
 
 
 def pobierz_cene(cin, cout):
-  if not API_KEY:
-    return "Brak klucza API"
-
-  # 1. Prawdziwy adres krok 1 z bezpośrednim silnikiem rezerwacyjnym dla tego obiektu
-  docelowy_url = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2&checkin={cin}&checkout={cout}&from={cin}&to={cout}"
-  encoded_url = quote_plus(docelowy_url)
-
-  # Wymuszamy na ScraperAPI zaczekanie na załadowanie kafelków z cenami (.price / .room / zł)
-  proxy_url = f"http://api.scraperapi.com?api_key={API_KEY}&url={encoded_url}&render=true&country_code=pl&wait_for_selector=body"
+  # 1. Bezpośrednie zapytanie POST do silnika kalkulacji ofert Hotres
+  url_hotres = "https://panel.hotres.pl/v4_step1"
+  data_payload = {
+      "arrival": cin,
+      "departure": cout,
+      "adults": "2",
+      "children": "0",
+      "lang": "pl",
+      "oid": "3292",  # ID obiektu Poznań Apartments Towarowa
+  }
+  headers = {
+      "User-Agent": (
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+          " like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      ),
+      "Referer": "https://www.poznanapartments.com/rezerwacja",
+  }
 
   try:
-    resp = requests.get(proxy_url, timeout=70)
-    tekst = resp.text
-    soup = BeautifulSoup(tekst, "html.parser")
+    # Wywołanie bezpośrednie
+    r = requests.post(url_hotres, data=data_payload, headers=headers, timeout=20)
+    html_doc = r.text
 
-    # A. Szukanie w blokach zawierających Apartament Delux
-    for tag in soup.find_all(
-        lambda e: e.name in ["div", "article", "section", "tr", "li"]
-        and "delux" in e.get_text().lower()
+    # Jeśli Hotres wymaga przejścia przez proxy API
+    if (
+        "Apartament Delux" not in html_doc
+        and "WYBIERZ OFERTĘ" not in html_doc
+        and API_KEY
     ):
-      t = tag.get_text(separator=" ")
-      if "Apartament Delux" in t or "Delux z 1 sypialnią" in t:
-        kwoty = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", t)
+      from urllib.parse import quote_plus
+
+      target = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2"
+      proxy_url = f"http://api.scraperapi.com?api_key={API_KEY}&url={quote_plus(target)}&render=true&country_code=pl"
+      r = requests.get(proxy_url, timeout=45)
+      html_doc = r.text
+
+    soup = BeautifulSoup(html_doc, "html.parser")
+
+    # 2. Szukanie ściśle w kontenerze Apartament Delux z 1 sypialnią
+    for k in soup.find_all(["div", "article", "section", "li"]):
+      txt = k.get_text(separator=" ")
+      if "Apartament Delux" in txt or "Delux z 1 sypialnią" in txt:
+        # Wyciągamy kwoty tylko z przedziału 300 - 1500 zł (odrzucamy sumy całomiesięczne)
+        kwoty = re.findall(r"(\d{3}[,\.]\d{2})\s*zł", txt)
         if kwoty:
+          # Bierzemy najniższą/ostatnią stawkę w kafelku (cena po rabacie)
           return f"{kwoty[-1].replace('.', ',')} zł"
 
-    # B. Wyciągnięcie wzorcem regularnym wprost z kodu strony
+    # 3. Wzorzec tekstowy dopasowany tylko do pojedynczej doby
     m = re.search(
-        r"Apartament\s+Delux[^\n\r<]{0,450}?(\d{2,4}[,\.]\d{2})\s*zł",
-        tekst,
+        r"Apartament\s+Delux[^\n\r<]{0,250}?(\d{3}[,\.]\d{2})\s*zł",
+        html_doc,
         re.IGNORECASE | re.DOTALL,
     )
     if m:
       return f"{m.group(1).replace('.', ',')} zł"
-
-    # C. Szukanie w surowym JSON (jeśli silnik zwrócił dane w stanie aplikacji / skryptach)
-    m_json = re.search(
-        r"Delux[^\}]*?(\d{2,4}[,\.]\d{2})", tekst, re.IGNORECASE
-    )
-    if m_json:
-      return f"{m_json.group(1).replace('.', ',')} zł"
-
-    # D. Jeśli widać inne pokoje ze zrzutu (Standard, Comfort, Studio...) wyciągamy właściwą pozycję
-    wszystkie_kwoty = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", soup.get_text())
-    unikalne = list(dict.fromkeys(wszystkie_kwoty))
-    if len(unikalne) >= 4:
-      # Pozycja Delux (564,40 zł)
-      return f"{unikalne[3].replace('.', ',')} zł"
-    elif unikalne:
-      return f"{unikalne[-1].replace('.', ',')} zł"
 
     return "Brak wolnych"
 
@@ -78,6 +83,7 @@ def pobierz_cene(cin, cout):
 
 
 def main():
+  # Czas polski (UTC+2)
   teraz = (
       datetime.datetime.utcnow() + datetime.timedelta(hours=2)
   ).strftime("%Y-%m-%d %H:%M:%S")
@@ -100,11 +106,13 @@ def main():
     except:
       historia = []
 
-  # Czyścimy nieudane odczyty
+  # Usunięcie absurdalnych wpisów (4090 zł, Brak wolnych itp.)
   historia = [
       h
       for h in historia
-      if h.get("cena") not in ["Brak wolnych", "Brak odczytu", "600 zł"]
+      if "4090" not in h.get("cena", "")
+      and "Brak wolnych" not in h.get("cena", "")
+      and "Brak odczytu" not in h.get("cena", "")
   ]
 
   for o in reversed(odczyty):
@@ -115,7 +123,7 @@ def main():
   with open(DATA_FILE, "w", encoding="utf-8") as f:
     json.dump(historia, f, ensure_ascii=False, indent=2)
 
-  # Czysta tabela
+  # Czysta tabela HTML
   wiersze = ""
   for h in historia:
     wiersze += f"""
