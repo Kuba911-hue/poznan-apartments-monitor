@@ -8,6 +8,7 @@ import requests
 
 API_KEY = os.environ.get("SCRAPER_API_KEY")
 
+# 4 weekendy w październiku 2026
 DATES = [
     ("2026-10-03", "2026-10-04"),
     ("2026-10-10", "2026-10-11"),
@@ -19,60 +20,66 @@ DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
 
-def pobierz_dane(cin, cout):
-  # 1. Sprawdzamy bezpośrednie zapytanie z sesją
-  session = requests.Session()
+def pobierz_cene(cin, cout):
+  # Format daty dla Hotres (YYYY-MM-DD oraz DD-MM-YYYY)
+  d_cin = datetime.datetime.strptime(cin, "%Y-%m-%d").strftime("%d-%m-%Y")
+  d_cout = datetime.datetime.strptime(cout, "%Y-%m-%d").strftime("%d-%m-%Y")
+
+  # Bezpośredni URL do silnika rezerwacji Hotres z poprawnymi parametrami
+  target_url = f"https://panel.hotres.pl/v4_step1?oid=3292&lang=pl&arrival={cin}&departure={cout}&adults=2&from={d_cin}&to={d_cout}"
+
+  if API_KEY:
+    proxy_url = f"http://api.scraperapi.com?api_key={API_KEY}&url={quote_plus(target_url)}&render=true&country_code=pl"
+  else:
+    proxy_url = target_url
+
   headers = {
       "User-Agent": (
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
           " like Gecko) Chrome/124.0.0.0 Safari/537.36"
       ),
-      "Accept": (
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
-      ),
-      "Accept-Language": "pl,en-US;q=0.7,en;q=0.3",
+      "Accept-Language": "pl-PL,pl;q=0.9",
   }
 
-  cena_znaleziona = "Brak wolnych"
+  try:
+    resp = requests.get(proxy_url, headers=headers, timeout=60)
+    html_text = resp.text
+    soup = BeautifulSoup(html_text, "html.parser")
 
-  # Próba A: Prawdziwy URL ze strony z pełnym renderem
-  target_url = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2"
+    # 1. Szukanie w kontenerze z Apartamentem Delux
+    for el in soup.find_all(["div", "article", "section", "li", "tr"]):
+      t = el.get_text(separator=" ")
+      if "Apartament Delux" in t or "Delux z 1 sypialnią" in t:
+        kwoty = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", t)
+        if kwoty:
+          return f"{kwoty[-1].replace('.', ',')} zł"
 
-  if API_KEY:
-    proxy_url = f"http://api.scraperapi.com?api_key={API_KEY}&url={quote_plus(target_url)}&render=true&country_code=pl"
-    try:
-      r = session.get(proxy_url, timeout=60)
-      tekst = r.text
+    # 2. Szukanie wyrażeniem regularnym w całym kodzie
+    m = re.search(
+        r"Apartament\s+Delux[^\n\r<]{0,350}?(\d{3,4}[,\.]\d{2})\s*zł",
+        html_text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if m:
+      return f"{m.group(1).replace('.', ',')} zł"
 
-      # Szukamy bezpośrednio wzorca cenowego dla Delux
-      match_delux = re.search(
-          r"Apartament\s+Delux[^\n\r<]{0,400}?(\d{3,4}[,\.]\d{2})\s*zł",
-          tekst,
-          re.IGNORECASE | re.DOTALL,
-      )
-      if match_delux:
-        return f"{match_delux.group(1).replace('.', ',')} zł"
+    # 3. Jeśli są kafelki w standardowym układzie: Studio, Standard, Comfort, Delux
+    wszystkie = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", soup.get_text())
+    unikalne = []
+    for k in wszystkie:
+      k_norm = k.replace(".", ",")
+      if k_norm not in unikalne and float(k_norm.replace(",", ".")) < 2500:
+        unikalne.append(k_norm)
 
-      # Szukamy po kafelkach
-      soup = BeautifulSoup(tekst, "html.parser")
-      for el in soup.find_all(["div", "article", "section"]):
-        t = el.get_text(separator=" ")
-        if "Delux" in t and "zł" in t:
-          ceny = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", t)
-          if ceny:
-            return f"{ceny[-1].replace('.', ',')} zł"
+    if len(unikalne) >= 4:
+      return f"{unikalne[3]} zł"
+    elif unikalne:
+      return f"{unikalne[-1]} zł"
 
-      # Jeśli są jakiekolwiek ceny
-      wszystkie = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", soup.get_text())
-      if len(wszystkie) >= 4:
-        return f"{wszystkie[3].replace('.', ',')} zł"
-      elif wszystkie:
-        return f"{wszystkie[-1].replace('.', ',')} zł"
+    return "Brak wolnych"
 
-    except Exception as e:
-      return f"Błąd: {str(e)[:15]}"
-
-  return cena_znaleziona
+  except Exception as e:
+    return f"Błąd: {str(e)[:15]}"
 
 
 def main():
@@ -82,14 +89,14 @@ def main():
   odczyty = []
 
   for cin, cout in DATES:
-    c = pobierz_dane(cin, cout)
+    c = pobierz_cene(cin, cout)
     odczyty.append({
         "data": teraz,
         "termin": f"{cin} — {cout}",
         "cena": c,
     })
 
-  # Historia
+  # Wczytanie historii
   historia = []
   if os.path.exists(DATA_FILE):
     try:
@@ -98,7 +105,7 @@ def main():
     except:
       historia = []
 
-  # Usunięcie starych błędów
+  # Usunięcie wszystkich dotychczasowych błędnych wpisów
   historia = [
       h
       for h in historia
@@ -106,9 +113,10 @@ def main():
       not in [
           "Brak wolnych",
           "Brak odczytu",
-          "Błąd: HTTPConnectionP",
+          "600 zł",
           "4090,20 zł",
       ]
+      and "Błąd" not in h.get("cena", "")
   ]
 
   for o in reversed(odczyty):
@@ -119,7 +127,7 @@ def main():
   with open(DATA_FILE, "w", encoding="utf-8") as f:
     json.dump(historia, f, ensure_ascii=False, indent=2)
 
-  # Czysta tabela
+  # Czysta tabela HTML
   wiersze = ""
   for h in historia:
     wiersze += f"""
