@@ -2,8 +2,7 @@ import datetime
 import json
 import os
 import re
-from bs4 import BeautifulSoup
-import requests
+from playwright.sync_api import sync_playwright
 
 DATES = [
     ("2026-10-03", "2026-10-04"),
@@ -15,88 +14,113 @@ DATES = [
 DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
-headers = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
-        " like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8",
-}
 
-
-def pobierz_cene_pojedyncza(cin, cout):
+def pobierz_cene_dla_terminu(page, cin, cout):
   url = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2"
-  cena_wynik = "Brak odczytu"
+  cena = "Brak odczytu"
 
   try:
-    response = requests.get(url, headers=headers, timeout=25)
-    soup = BeautifulSoup(response.text, "html.parser")
-    tekst_caly = soup.get_text()
+    # 1. Wejście na stronę rezerwacji
+    page.goto(url, wait_until="networkidle", timeout=60000)
 
-    znaleziono = False
-    for el in soup.find_all(
-        ["div", "article", "section", "li"], class_=True
-    ) or soup.find_all(["div"]):
-      tekst_el = el.get_text()
-      if (
-          "Apartament Delux" in tekst_el
-          or "Apartament Deluxe" in tekst_el
-          or "Delux z 1 sypialnią" in tekst_el
-      ):
-        ceny = re.findall(
-            r"(\d+[\s.,]?\d*)\s*zł", tekst_el, flags=re.IGNORECASE
+    # 2. Czekamy na załadowanie elementów z ofertami (np. przycisków WYBIERZ OFERTĘ)
+    try:
+      page.wait_for_selector(
+          "text=/WYBIERZ OFERTĘ|Wybierz ofertę/i", timeout=12000
+      )
+    except:
+      page.wait_for_timeout(4000)
+
+    # 3. Przeszukujemy całą stronę pod kątem wariantu Delux
+    delux_locator = page.locator("text=/Apartament Delux z 1 sypialnią/i").first
+    if not delux_locator.is_visible():
+      delux_locator = page.locator("text=/Apartament Delux/i").first
+
+    if delux_locator.is_visible():
+      # Pobieramy cały kafelek z ofertą
+      kontener = delux_locator.locator(
+          "xpath=ancestor::*[contains(., 'zł') and"
+          " (contains(., 'WYBIERZ') or contains(., 'Wybierz'))][1]"
+      )
+      if kontener.count() == 0:
+        kontener = delux_locator.locator(
+            "xpath=ancestor::*[contains(., 'zł')][last()]"
         )
-        if ceny:
-          cena_wynik = f"{ceny[-1].strip()} zł"
-          znaleziono = True
-          break
 
-    if not znaleziono:
+      tekst = kontener.inner_text()
+      # Wyciągamy stawkę (szukamy wzorca np. 564,40 zł)
+      stawki = re.findall(
+          r"(\d{2,4}[,\.]\d{2})\s*zł", tekst, flags=re.IGNORECASE
+      )
+      if stawki:
+        # Bierzemy właściwą stawkę (ostatnią/najniższą przed przyciskiem)
+        cena = f"{stawki[-1].replace('.', ',')} zł"
+    else:
+      # Awaryjny fallback na cały wyrenderowany tekst w oknie
+      caly_tekst = page.locator("body").inner_text()
       match = re.search(
-          r"Delux[^\n\r]*?(\d+[\s.,]\d{2})\s*zł",
-          tekst_caly,
+          r"Apartament\s+Delux[^\n\r]{0,350}?(\d{2,4}[,\.]\d{2})\s*zł",
+          caly_tekst,
           re.IGNORECASE | re.DOTALL,
       )
       if match:
-        cena_wynik = f"{match.group(1).strip()} zł"
-      else:
-        wszystkie_ceny = re.findall(r"\d+,\d{2}\s*zł", tekst_caly)
-        if len(wszystkie_ceny) >= 3:
-          cena_wynik = wszystkie_ceny[2]
-        elif wszystkie_ceny:
-          cena_wynik = wszystkie_ceny[0]
+        cena = f"{match.group(1).replace('.', ',')} zł"
 
   except Exception as e:
-    cena_wynik = f"Błąd: {str(e)}"
+    cena = f"Błąd: {str(e)[:25]}"
 
-  return cena_wynik
+  return cena
 
 
 def main():
+  # Aktualny czas polski (UTC+2)
   teraz = (
       datetime.datetime.utcnow() + datetime.timedelta(hours=2)
   ).strftime("%Y-%m-%d %H:%M:%S")
   odczyty = []
 
-  for cin, cout in DATES:
-    cena = pobierz_cene_pojedyncza(cin, cout)
-    odczyty.append({
-        "data": teraz,
-        "termin": f"{cin} — {cout}",
-        "cena": cena,
-    })
+  with sync_playwright() as p:
+    browser = p.chromium.launch(
+        headless=True,
+        args=["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"],
+    )
 
-  # Wczytanie historii
+    # Osobny, czysty profil dla każdego przebiegu
+    context = browser.new_context(
+        viewport={"width": 1440, "height": 900},
+        locale="pl-PL",
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+    )
+    page = context.new_page()
+
+    for cin, cout in DATES:
+      c = pobierz_cene_dla_terminu(page, cin, cout)
+      odczyty.append({
+          "data": teraz,
+          "termin": f"{cin} — {cout}",
+          "cena": c,
+      })
+
+    browser.close()
+
+  # Wczytanie i czyszczenie historii
   historia = []
   if os.path.exists(DATA_FILE):
     try:
       with open(DATA_FILE, "r", encoding="utf-8") as f:
         historia = json.load(f)
-    except Exception:
+    except:
       historia = []
 
-  # Usunięcie starych błędów
-  historia = [h for h in historia if h.get("cena") != "Brak odczytu"]
+  # Usuwamy wcześniejsze błędne wpisy (600 zł, Brak odczytu, itp.)
+  historia = [
+      h
+      for h in historia
+      if h.get("cena") not in ["600 zł", "Brak odczytu", "Brak wolnych"]
+  ]
 
   for o in reversed(odczyty):
     historia.insert(0, o)
@@ -106,7 +130,7 @@ def main():
   with open(DATA_FILE, "w", encoding="utf-8") as f:
     json.dump(historia, f, ensure_ascii=False, indent=2)
 
-  # Czysta tabela
+  # Czysta tabela HTML
   wiersze = ""
   for h in historia:
     wiersze += f"""
@@ -121,6 +145,7 @@ def main():
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>Ceny: Apartament Delux</title>
     <style>
         body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #e2e8f0; padding: 20px; max-width: 650px; margin: 0 auto; }}
