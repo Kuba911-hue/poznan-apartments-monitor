@@ -15,65 +15,68 @@ DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
 
-def pobierz_cene_dla_terminu(page, cin, cout):
-  url = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2"
+def pobierz_cene(browser, cin, cout):
+  context = browser.new_context(
+      viewport={"width": 1440, "height": 900},
+      locale="pl-PL",
+      user_agent=(
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      ),
+  )
+  page = context.new_page()
   cena = "Brak odczytu"
 
   try:
-    # 1. Wejście na stronę rezerwacji
-    page.goto(url, wait_until="networkidle", timeout=60000)
+    url = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2"
+    page.goto(url, wait_until="domcontentloaded", timeout=45000)
 
-    # 2. Czekamy na załadowanie elementów z ofertami (np. przycisków WYBIERZ OFERTĘ)
-    try:
-      page.wait_for_selector(
-          "text=/WYBIERZ OFERTĘ|Wybierz ofertę/i", timeout=12000
-      )
-    except:
-      page.wait_for_timeout(4000)
+    # Czekamy na załadowanie ramek i ofert
+    page.wait_for_timeout(6000)
 
-    # 3. Przeszukujemy całą stronę pod kątem wariantu Delux
-    delux_locator = page.locator("text=/Apartament Delux z 1 sypialnią/i").first
-    if not delux_locator.is_visible():
-      delux_locator = page.locator("text=/Apartament Delux/i").first
+    # Przeszukujemy stronę główną oraz wszystkie ramki (iframe)
+    wszystkie_ramki = [page] + page.frames
 
-    if delux_locator.is_visible():
-      # Pobieramy cały kafelek z ofertą
-      kontener = delux_locator.locator(
-          "xpath=ancestor::*[contains(., 'zł') and"
-          " (contains(., 'WYBIERZ') or contains(., 'Wybierz'))][1]"
-      )
-      if kontener.count() == 0:
-        kontener = delux_locator.locator(
-            "xpath=ancestor::*[contains(., 'zł')][last()]"
+    for target in wszystkie_ramki:
+      delux = target.locator("text=/Apartament Delux/i")
+      if delux.count() > 0:
+        # Znaleziono sekcję Delux w tej ramce
+        el = delux.first
+        # Szukamy kafelka z ceną
+        karta = el.locator("xpath=ancestor::*[contains(., 'zł')][last()]")
+        tekst = karta.inner_text() if karta.count() > 0 else target.content()
+
+        # Wyciągamy kwotę z kafelka
+        stawki = re.findall(
+            r"(\d{2,4}[,\.]\d{2})\s*zł", tekst, flags=re.IGNORECASE
         )
+        if stawki:
+          cena = f"{stawki[-1].replace('.', ',')} zł"
+          break
 
-      tekst = kontener.inner_text()
-      # Wyciągamy stawkę (szukamy wzorca np. 564,40 zł)
-      stawki = re.findall(
-          r"(\d{2,4}[,\.]\d{2})\s*zł", tekst, flags=re.IGNORECASE
-      )
-      if stawki:
-        # Bierzemy właściwą stawkę (ostatnią/najniższą przed przyciskiem)
-        cena = f"{stawki[-1].replace('.', ',')} zł"
-    else:
-      # Awaryjny fallback na cały wyrenderowany tekst w oknie
-      caly_tekst = page.locator("body").inner_text()
-      match = re.search(
-          r"Apartament\s+Delux[^\n\r]{0,350}?(\d{2,4}[,\.]\d{2})\s*zł",
-          caly_tekst,
-          re.IGNORECASE | re.DOTALL,
-      )
-      if match:
-        cena = f"{match.group(1).replace('.', ',')} zł"
+    # Jeśli kafelki są inaczej zagnieżdżone w ramce
+    if cena == "Brak odczytu":
+      for target in wszystkie_ramki:
+        tekst_ramki = target.locator("body").inner_text()
+        if "Apartament Delux" in tekst_ramki and "zł" in tekst_ramki:
+          match = re.search(
+              r"Apartament\s+Delux[^\n\r]{0,350}?(\d{2,4}[,\.]\d{2})\s*zł",
+              tekst_ramki,
+              re.IGNORECASE | re.DOTALL,
+          )
+          if match:
+            cena = f"{match.group(1).replace('.', ',')} zł"
+            break
 
   except Exception as e:
-    cena = f"Błąd: {str(e)[:25]}"
+    cena = f"Błąd: {str(e)[:20]}"
+  finally:
+    context.close()
 
   return cena
 
 
 def main():
-  # Aktualny czas polski (UTC+2)
   teraz = (
       datetime.datetime.utcnow() + datetime.timedelta(hours=2)
   ).strftime("%Y-%m-%d %H:%M:%S")
@@ -85,19 +88,8 @@ def main():
         args=["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"],
     )
 
-    # Osobny, czysty profil dla każdego przebiegu
-    context = browser.new_context(
-        viewport={"width": 1440, "height": 900},
-        locale="pl-PL",
-        user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        ),
-    )
-    page = context.new_page()
-
     for cin, cout in DATES:
-      c = pobierz_cene_dla_terminu(page, cin, cout)
+      c = pobierz_cene(browser, cin, cout)
       odczyty.append({
           "data": teraz,
           "termin": f"{cin} — {cout}",
@@ -106,7 +98,7 @@ def main():
 
     browser.close()
 
-  # Wczytanie i czyszczenie historii
+  # Wczytanie historii
   historia = []
   if os.path.exists(DATA_FILE):
     try:
@@ -115,12 +107,8 @@ def main():
     except:
       historia = []
 
-  # Usuwamy wcześniejsze błędne wpisy (600 zł, Brak odczytu, itp.)
-  historia = [
-      h
-      for h in historia
-      if h.get("cena") not in ["600 zł", "Brak odczytu", "Brak wolnych"]
-  ]
+  # Usunięcie starych wpisów "Brak odczytu"
+  historia = [h for h in historia if h.get("cena") != "Brak odczytu"]
 
   for o in reversed(odczyty):
     historia.insert(0, o)
@@ -130,7 +118,7 @@ def main():
   with open(DATA_FILE, "w", encoding="utf-8") as f:
     json.dump(historia, f, ensure_ascii=False, indent=2)
 
-  # Czysta tabela HTML
+  # Czysta tabela
   wiersze = ""
   for h in historia:
     wiersze += f"""
