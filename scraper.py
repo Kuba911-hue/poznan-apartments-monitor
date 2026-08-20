@@ -2,8 +2,10 @@ import datetime
 import json
 import os
 import re
-from playwright.sync_api import sync_playwright
+from bs4 import BeautifulSoup
+import requests
 
+# 4 terminy weekendowe
 DATES = [
     ("2026-10-03", "2026-10-04"),
     ("2026-10-10", "2026-10-11"),
@@ -15,61 +17,63 @@ DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
 
-def pobierz_cene_dla_terminu(browser, checkin, checkout):
-  # Tworzymy czysty kontekst dla każdego zapytania, aby nie mieszać pamięci podręcznej sesji
-  context = browser.new_context(
-      viewport={"width": 1440, "height": 900},
-      locale="pl-PL",
-      user_agent=(
+def pobierz_cene_dla_pojedynczej_daty(cin, cout):
+  # Osobna, czysta sesja dla każdej daty (izolowane ciasteczka)
+  session = requests.Session()
+  headers = {
+      "User-Agent": (
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
           " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
       ),
-  )
-  page = context.new_page()
+      "Accept-Language": "pl-PL,pl;q=0.9",
+      "Referer": "https://www.poznanapartments.com/",
+  }
+
   cena = "Brak odczytu"
+  url = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2&checkin={cin}&checkout={cout}&from={cin}&to={cout}"
 
   try:
-    url = f"https://www.poznanapartments.com/rezerwacja?arrival={checkin}&departure={checkout}&adults=2&checkin={checkin}&checkout={checkout}"
-    page.goto(url, wait_until="networkidle", timeout=45000)
-    page.wait_for_timeout(3500)
+    # 1. Wejście na stronę silnika
+    res = session.get(url, headers=headers, timeout=20)
+    soup = BeautifulSoup(res.text, "html.parser")
+    tekst = soup.get_text(separator=" ")
 
-    # 1. Szukamy sekcji zawierającej "Apartament Delux"
-    elementy_delux = page.locator("text=/Apartament Delux/i").all()
+    # 2. Szukamy kafelka z Deluxem
+    kontenery = soup.find_all(
+        lambda tag: tag.name in ["div", "article", "section"]
+        and "delux" in tag.get_text().lower()
+    )
 
-    for el in elementy_delux:
-      # Wychodzimy do nadrzędnego kafelka z ofertą
-      kontener = el.locator(
-          "xpath=ancestor::div[contains(., 'zł') and contains(., 'WYBIERZ')][1]"
-      )
-      if kontener.count() == 0:
-        kontener = el.locator("xpath=ancestor::div[contains(., 'zł')][1]")
+    for k in kontenery:
+      t_karty = k.get_text(separator=" ")
+      if "Delux z 1 sypialnią" in t_karty or "Apartament Delux" in t_karty:
+        stawki = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", t_karty)
+        if stawki:
+          return f"{stawki[-1].replace('.', ',')} zł"
 
-      if kontener.count() > 0:
-        tekst = kontener.inner_text()
-        # Wyciągamy wszystkie stawki w formacie np. 564,40 zł
-        kwoty = re.findall(
-            r"(\d{2,4}[,\.]\d{2})\s*zł", tekst, flags=re.IGNORECASE
-        )
-        if kwoty:
-          # Bierzemy właściwą stawkę (zwykle ostatnia przed przyciskiem rezerwacji)
-          cena = f"{kwoty[-1].replace('.', ',')} zł"
-          break
+    # 3. Jeśli struktura kafelków jest spłaszczona, wyciągamy regexem z okolicy Deluxa
+    match = re.search(
+        r"Delux[^\n\r]{0,350}?(\d{2,4}[,\.]\d{2})\s*zł",
+        tekst,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if match:
+      return f"{match.group(1).replace('.', ',')} zł"
 
-    # 2. Jeśli nie znaleziono przez kontener, szukamy bezpośrednio w wyrenderowanym tekście
-    if cena == "Brak odczytu":
-      caly_tekst = page.locator("body").inner_text()
-      match = re.search(
-          r"Apartament\s+Delux[^\n\r]{0,300}?(\d{2,4}[,\.]\d{2})\s*zł",
-          caly_tekst,
-          re.IGNORECASE | re.DOTALL,
-      )
-      if match:
-        cena = f"{match.group(1).replace('.', ',')} zł"
+    # 4. Jeśli nic nie dopasowało, wyciągamy wszystkie stawki z tej konkretnej odpowiedzi
+    wszystkie = re.findall(
+        r"(\d{3}[,\.]\d{2})\s*zł", tekst, flags=re.IGNORECASE
+    )
+    if len(wszystkie) >= 3:
+      # Na liście pokoi: Standard -> Comfort -> Delux (3 pozycja)
+      cena = f"{wszystkie[2].replace('.', ',')} zł"
+    elif wszystkie:
+      cena = f"{wszystkie[-1].replace('.', ',')} zł"
 
   except Exception as e:
-    cena = "Błąd pobierania"
+    cena = "Błąd połączenia"
   finally:
-    context.close()
+    session.close()
 
   return cena
 
@@ -81,23 +85,16 @@ def main():
   ).strftime("%Y-%m-%d %H:%M:%S")
   odczyty = []
 
-  with sync_playwright() as p:
-    browser = p.chromium.launch(
-        headless=True,
-        args=["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"],
-    )
+  # Wykonujemy 4 osobne, niezależne zapytania
+  for cin, cout in DATES:
+    c = pobierz_cene_dla_pojedynczej_daty(cin, cout)
+    odczyty.append({
+        "data": teraz,
+        "termin": f"{cin} — {cout}",
+        "cena": c,
+    })
 
-    for cin, cout in DATES:
-      c = pobierz_cene_dla_terminu(browser, cin, cout)
-      odczyty.append({
-          "data": teraz,
-          "termin": f"{cin} — {cout}",
-          "cena": c,
-      })
-
-    browser.close()
-
-  # Wczytanie historii
+  # Zapis historii
   historia = []
   if os.path.exists(DATA_FILE):
     try:
@@ -106,16 +103,23 @@ def main():
     except:
       historia = []
 
+  # Czyścimy nieudane wpisy "Brak odczytu"
+  historia = [
+      h
+      for h in historia
+      if h.get("cena") != "Brak odczytu"
+      and "Brak wolnych" not in h.get("cena", "")
+  ]
+
   for o in reversed(odczyty):
     historia.insert(0, o)
 
-  # Zostawiamy historię ostatnich 40 odczytów
   historia = historia[:40]
 
   with open(DATA_FILE, "w", encoding="utf-8") as f:
     json.dump(historia, f, ensure_ascii=False, indent=2)
 
-  # Czysta tabela bez kafelków
+  # Czysta tabela HTML
   wiersze = ""
   for h in historia:
     wiersze += f"""
