@@ -2,9 +2,8 @@ import datetime
 import json
 import os
 import re
-import requests
+from playwright.sync_api import sync_playwright
 
-# Terminy weekendowe w październiku 2026
 DATES = [
     ("2026-10-03", "2026-10-04"),
     ("2026-10-10", "2026-10-11"),
@@ -15,91 +14,90 @@ DATES = [
 DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
-        " like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": "application/json, text/javascript, */*; q=0.01",
-    "Referer": "https://www.poznanapartments.com/rezerwacja",
-}
 
-
-def pobierz_cene_hotres(cin, cout):
-  url = "https://panel.hotres.pl/v4/api/get_offers"
-  params = {
-      "oid": "poznanapartments",
-      "lang": "pl",
-      "arrival": cin,
-      "departure": cout,
-      "adults": "2",
-      "children": "0",
-  }
-
-  cena_wynik = "Brak odczytu"
+def pobierz_cene_dla_terminu(browser, checkin, checkout):
+  # Tworzymy czysty kontekst dla każdego zapytania, aby nie mieszać pamięci podręcznej sesji
+  context = browser.new_context(
+      viewport={"width": 1440, "height": 900},
+      locale="pl-PL",
+      user_agent=(
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      ),
+  )
+  page = context.new_page()
+  cena = "Brak odczytu"
 
   try:
-    # 1. Próba pobrania przez API Hotres (GET / POST)
-    resp = requests.post(url, params=params, headers=HEADERS, timeout=15)
-    if resp.status_code != 200:
-      resp = requests.get(url, params=params, headers=HEADERS, timeout=15)
+    url = f"https://www.poznanapartments.com/rezerwacja?arrival={checkin}&departure={checkout}&adults=2&checkin={checkin}&checkout={checkout}"
+    page.goto(url, wait_until="networkidle", timeout=45000)
+    page.wait_for_timeout(3500)
 
-    if resp.status_code == 200:
-      try:
-        data = resp.json()
-        tekst_json = json.dumps(data, ensure_ascii=False)
+    # 1. Szukamy sekcji zawierającej "Apartament Delux"
+    elementy_delux = page.locator("text=/Apartament Delux/i").all()
 
-        # Wyszukiwanie sekcji Deluxe w odpowiedzi JSON
-        match = re.search(
-            r"Delux[^\}]*?price[\":\s]+(\d+[\.,]?\d*)",
-            tekst_json,
-            re.IGNORECASE,
+    for el in elementy_delux:
+      # Wychodzimy do nadrzędnego kafelka z ofertą
+      kontener = el.locator(
+          "xpath=ancestor::div[contains(., 'zł') and contains(., 'WYBIERZ')][1]"
+      )
+      if kontener.count() == 0:
+        kontener = el.locator("xpath=ancestor::div[contains(., 'zł')][1]")
+
+      if kontener.count() > 0:
+        tekst = kontener.inner_text()
+        # Wyciągamy wszystkie stawki w formacie np. 564,40 zł
+        kwoty = re.findall(
+            r"(\d{2,4}[,\.]\d{2})\s*zł", tekst, flags=re.IGNORECASE
         )
-        if match:
-          val = match.group(1).replace(".", ",")
-          return f"{val} zł"
-      except Exception:
-        pass
+        if kwoty:
+          # Bierzemy właściwą stawkę (zwykle ostatnia przed przyciskiem rezerwacji)
+          cena = f"{kwoty[-1].replace('.', ',')} zł"
+          break
 
-    # 2. Awaryjne zapytanie bezpośrednio do widoku rezerwacji
-    url_web = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2"
-    r = requests.get(url_web, headers=HEADERS, timeout=15)
-    match_web = re.search(
-        r"Apartament\s+Delux[^\n\r]{0,350}?(\d{2,4}[,\.]\d{2})\s*zł",
-        r.text,
-        re.IGNORECASE | re.DOTALL,
-    )
-    if match_web:
-      cena_wynik = f"{match_web.group(1).replace('.', ',')} zł"
-    else:
-      # Wartość z aktywnego cennika dla października
-      stawki = re.findall(r"(\d{3}[,\.]\d{2})\s*zł", r.text)
-      if len(stawki) >= 3:
-        cena_wynik = f"{stawki[2].replace('.', ',')} zł"
-      else:
-        cena_wynik = "564,40 zł"
+    # 2. Jeśli nie znaleziono przez kontener, szukamy bezpośrednio w wyrenderowanym tekście
+    if cena == "Brak odczytu":
+      caly_tekst = page.locator("body").inner_text()
+      match = re.search(
+          r"Apartament\s+Delux[^\n\r]{0,300}?(\d{2,4}[,\.]\d{2})\s*zł",
+          caly_tekst,
+          re.IGNORECASE | re.DOTALL,
+      )
+      if match:
+        cena = f"{match.group(1).replace('.', ',')} zł"
 
   except Exception as e:
-    cena_wynik = f"Błąd: {str(e)[:20]}"
+    cena = "Błąd pobierania"
+  finally:
+    context.close()
 
-  return cena_wynik
+  return cena
 
 
 def main():
+  # Czas polski (UTC+2)
   teraz = (
       datetime.datetime.utcnow() + datetime.timedelta(hours=2)
   ).strftime("%Y-%m-%d %H:%M:%S")
   odczyty = []
 
-  for cin, cout in DATES:
-    c = pobierz_cene_hotres(cin, cout)
-    odczyty.append({
-        "data": teraz,
-        "termin": f"{cin} — {cout}",
-        "cena": c,
-    })
+  with sync_playwright() as p:
+    browser = p.chromium.launch(
+        headless=True,
+        args=["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"],
+    )
 
-  # Zapis historii
+    for cin, cout in DATES:
+      c = pobierz_cene_dla_terminu(browser, cin, cout)
+      odczyty.append({
+          "data": teraz,
+          "termin": f"{cin} — {cout}",
+          "cena": c,
+      })
+
+    browser.close()
+
+  # Wczytanie historii
   historia = []
   if os.path.exists(DATA_FILE):
     try:
@@ -108,23 +106,16 @@ def main():
     except:
       historia = []
 
-  # Usunięcie starych, błędnych logów
-  historia = [
-      h
-      for h in historia
-      if h.get("cena") != "Brak odczytu"
-      and "Brak wolnych" not in h.get("cena", "")
-  ]
-
   for o in reversed(odczyty):
     historia.insert(0, o)
 
+  # Zostawiamy historię ostatnich 40 odczytów
   historia = historia[:40]
 
   with open(DATA_FILE, "w", encoding="utf-8") as f:
     json.dump(historia, f, ensure_ascii=False, indent=2)
 
-  # Czysta tabela HTML
+  # Czysta tabela bez kafelków
   wiersze = ""
   for h in historia:
     wiersze += f"""
