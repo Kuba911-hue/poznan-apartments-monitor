@@ -1,31 +1,31 @@
 [
   {
-    "data_odczytu": "2026-08-20 19:53:24",
+    "data_odczytu": "2026-08-20 19:56:35",
     "termin": "2026-10-03 do 2026-10-04",
     "pokoj": "Apartament Delux z 1 sypialnią",
-    "cena": "Brak wolnych / Nie znaleziono",
-    "url": "https://www.poznanapartments.com/rezerwacja?arrival=2026-10-03&departure=2026-10-04&adults=2"
+    "cena": "Brak wolnych miejsc",
+    "url": "https://www.poznanapartments.com/rezerwacja?from=2026-10-03&to=2026-10-04&adults=2&checkin=2026-10-03&checkout=2026-10-04&arrival=2026-10-03&departure=2026-10-04"
   },
   {
-    "data_odczytu": "2026-08-20 19:53:24",
+    "data_odczytu": "2026-08-20 19:56:35",
     "termin": "2026-10-10 do 2026-10-11",
     "pokoj": "Apartament Delux z 1 sypialnią",
-    "cena": "Brak wolnych / Nie znaleziono",
-    "url": "https://www.poznanapartments.com/rezerwacja?arrival=2026-10-10&departure=2026-10-11&adults=2"
+    "cena": "Brak wolnych miejsc",
+    "url": "https://www.poznanapartments.com/rezerwacja?from=2026-10-10&to=2026-10-11&adults=2&checkin=2026-10-10&checkout=2026-10-11&arrival=2026-10-10&departure=2026-10-11"
   },
   {
-    "data_odczytu": "2026-08-20 19:53:24",
+    "data_odczytu": "2026-08-20 19:56:35",
     "termin": "2026-10-17 do 2026-10-18",
     "pokoj": "Apartament Delux z 1 sypialnią",
-    "cena": "Brak wolnych / Nie znaleziono",
-    "url": "https://www.poznanapartments.com/rezerwacja?arrival=2026-10-17&departure=2026-10-18&adults=2"
+    "cena": "Brak wolnych miejsc",
+    "url": "https://www.poznanapartments.com/rezerwacja?from=2026-10-17&to=2026-10-18&adults=2&checkin=2026-10-17&checkout=2026-10-18&arrival=2026-10-17&departure=2026-10-18"
   },
   {
-    "data_odczytu": "2026-08-20 19:53:24",
+    "data_odczytu": "2026-08-20 19:56:35",
     "termin": "2026-10-24 do 2026-10-25",
     "pokoj": "Apartament Delux z 1 sypialnią",
-    "cena": "Brak wolnych / Nie znaleziono",
-    "url": "https://www.poznanapartments.com/rezerwacja?arrival=2026-10-24&departure=2026-10-25&adults=2"
+    "cena": "Brak wolnych miejsc",
+    "url": "https://www.poznanapartments.com/rezerwacja?from=2026-10-24&to=2026-10-25&adults=2&checkin=2026-10-24&checkout=2026-10-25&arrival=2026-10-24&departure=2026-10-25"
   },
   {
     "data": "2026-08-20 19:46:12",
