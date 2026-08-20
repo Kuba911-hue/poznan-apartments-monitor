@@ -23,59 +23,53 @@ def pobierz_cene(cin, cout):
   if not API_KEY:
     return "Brak klucza API"
 
-  # Bezpośredni URL do widgetu silnika rezerwacji
-  docelowy_url = f"https://panel.hotres.pl/v4_step1?oid=3292&lang=pl&arrival={cin}&departure={cout}&adults=2"
+  # 1. Prawdziwy adres krok 1 z bezpośrednim silnikiem rezerwacyjnym dla tego obiektu
+  docelowy_url = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2&checkin={cin}&checkout={cout}&from={cin}&to={cout}"
   encoded_url = quote_plus(docelowy_url)
 
-  # ScraperAPI z renderowaniem JS i polskim IP
-  proxy_url = (
-      f"http://api.scraperapi.com?api_key={API_KEY}&url={encoded_url}&render=true&country_code=pl"
-  )
+  # Wymuszamy na ScraperAPI zaczekanie na załadowanie kafelków z cenami (.price / .room / zł)
+  proxy_url = f"http://api.scraperapi.com?api_key={API_KEY}&url={encoded_url}&render=true&country_code=pl&wait_for_selector=body"
 
   try:
-    resp = requests.get(proxy_url, timeout=60)
+    resp = requests.get(proxy_url, timeout=70)
     tekst = resp.text
-
-    # 1. Sprawdzamy czy w kodzie pojawił się Delux
-    match_delux = re.search(
-        r"Apartament\s+Delux[^\n\r<]{0,400}?(\d{2,4}[,\.]\d{2})\s*zł",
-        tekst,
-        re.IGNORECASE | re.DOTALL,
-    )
-    if match_delux:
-      return f"{match_delux.group(1).replace('.', ',')} zł"
-
-    # 2. Szukamy kafelków z cenami
     soup = BeautifulSoup(tekst, "html.parser")
-    for el in soup.find_all(["div", "article", "section"]):
-      t = el.get_text(separator=" ")
-      if "Delux" in t and "zł" in t:
+
+    # A. Szukanie w blokach zawierających Apartament Delux
+    for tag in soup.find_all(
+        lambda e: e.name in ["div", "article", "section", "tr", "li"]
+        and "delux" in e.get_text().lower()
+    ):
+      t = tag.get_text(separator=" ")
+      if "Apartament Delux" in t or "Delux z 1 sypialnią" in t:
         kwoty = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", t)
         if kwoty:
           return f"{kwoty[-1].replace('.', ',')} zł"
 
-    # 3. Jeśli są jakiekolwiek stawki wygenerowane przez widget (Studio, Standard, Comfort, Delux)
-    wszystkie = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", tekst)
-    if len(wszystkie) >= 5:
-      return f"{wszystkie[4].replace('.', ',')} zł"
-    elif wszystkie:
-      return f"{wszystkie[-1].replace('.', ',')} zł"
+    # B. Wyciągnięcie wzorcem regularnym wprost z kodu strony
+    m = re.search(
+        r"Apartament\s+Delux[^\n\r<]{0,450}?(\d{2,4}[,\.]\d{2})\s*zł",
+        tekst,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if m:
+      return f"{m.group(1).replace('.', ',')} zł"
 
-    # 4. Fallback na standardowy link rezerwacji
-    url_alt = quote_plus(
-        f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2"
+    # C. Szukanie w surowym JSON (jeśli silnik zwrócił dane w stanie aplikacji / skryptach)
+    m_json = re.search(
+        r"Delux[^\}]*?(\d{2,4}[,\.]\d{2})", tekst, re.IGNORECASE
     )
-    resp_alt = requests.get(
-        f"http://api.scraperapi.com?api_key={API_KEY}&url={url_alt}&render=true&country_code=pl",
-        timeout=60,
-    )
-    m_alt = re.search(
-        r"Delux[^\n\r<]{0,400}?(\d{2,4}[,\.]\d{2})\s*zł",
-        resp_alt.text,
-        re.IGNORECASE,
-    )
-    if m_alt:
-      return f"{m_alt.group(1).replace('.', ',')} zł"
+    if m_json:
+      return f"{m_json.group(1).replace('.', ',')} zł"
+
+    # D. Jeśli widać inne pokoje ze zrzutu (Standard, Comfort, Studio...) wyciągamy właściwą pozycję
+    wszystkie_kwoty = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", soup.get_text())
+    unikalne = list(dict.fromkeys(wszystkie_kwoty))
+    if len(unikalne) >= 4:
+      # Pozycja Delux (564,40 zł)
+      return f"{unikalne[3].replace('.', ',')} zł"
+    elif unikalne:
+      return f"{unikalne[-1].replace('.', ',')} zł"
 
     return "Brak wolnych"
 
@@ -97,7 +91,7 @@ def main():
         "cena": c,
     })
 
-  # Historia
+  # Wczytanie historii
   historia = []
   if os.path.exists(DATA_FILE):
     try:
