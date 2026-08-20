@@ -19,54 +19,60 @@ DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
 
-def pobierz_cene_dla_terminu(cin, cout):
-  if not API_KEY:
-    return "Brak klucza SCRAPER_API_KEY"
+def pobierz_dane(cin, cout):
+  # 1. Sprawdzamy bezpośrednie zapytanie z sesją
+  session = requests.Session()
+  headers = {
+      "User-Agent": (
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+          " like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      ),
+      "Accept": (
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+      ),
+      "Accept-Language": "pl,en-US;q=0.7,en;q=0.3",
+  }
 
-  # Bezpośredni URL do podstrony wyliczania ofert w systemie Hotres dla tego obiektu
-  target_url = f"https://panel.hotres.pl/v4_step1?oid=3292&lang=pl&arrival={cin}&departure={cout}&adults=2"
-  proxy_url = f"http://api.scraperapi.com?api_key={API_KEY}&url={quote_plus(target_url)}&render=true&country_code=pl"
+  cena_znaleziona = "Brak wolnych"
 
-  try:
-    resp = requests.get(proxy_url, timeout=60)
-    html = resp.text
-    soup = BeautifulSoup(html, "html.parser")
+  # Próba A: Prawdziwy URL ze strony z pełnym renderem
+  target_url = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2"
 
-    # 1. Szukanie w kontenerze z Apartamentem Delux
-    for element in soup.find_all(["div", "article", "section", "li", "tr"]):
-      tekst_bloku = element.get_text(separator=" ")
-      if "Apartament Delux" in tekst_bloku or "Delux z 1 sypialnią" in tekst_bloku:
-        # Kwoty jednostkowe (od 300 zł do 1999 zł)
-        kwoty = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", tekst_bloku)
-        if kwoty:
-          return f"{kwoty[-1].replace('.', ',')} zł"
+  if API_KEY:
+    proxy_url = f"http://api.scraperapi.com?api_key={API_KEY}&url={quote_plus(target_url)}&render=true&country_code=pl"
+    try:
+      r = session.get(proxy_url, timeout=60)
+      tekst = r.text
 
-    # 2. Bezpośredni regex na cały kod
-    m = re.search(
-        r"Apartament\s+Delux[^\n\r<]{0,350}?(\d{3,4}[,\.]\d{2})\s*zł",
-        html,
-        re.IGNORECASE | re.DOTALL,
-    )
-    if m:
-      return f"{m.group(1).replace('.', ',')} zł"
+      # Szukamy bezpośrednio wzorca cenowego dla Delux
+      match_delux = re.search(
+          r"Apartament\s+Delux[^\n\r<]{0,400}?(\d{3,4}[,\.]\d{2})\s*zł",
+          tekst,
+          re.IGNORECASE | re.DOTALL,
+      )
+      if match_delux:
+        return f"{match_delux.group(1).replace('.', ',')} zł"
 
-    # 3. Jeśli silnik zwrócił kafelki w standardowej kolejności (Studio, Standard, Comfort, Delux)
-    wszystkie = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", soup.get_text())
-    unikalne = []
-    for k in wszystkie:
-      k_pl = k.replace(".", ",")
-      if k_pl not in unikalne and float(k_pl.replace(",", ".")) < 2500:
-        unikalne.append(k_pl)
+      # Szukamy po kafelkach
+      soup = BeautifulSoup(tekst, "html.parser")
+      for el in soup.find_all(["div", "article", "section"]):
+        t = el.get_text(separator=" ")
+        if "Delux" in t and "zł" in t:
+          ceny = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", t)
+          if ceny:
+            return f"{ceny[-1].replace('.', ',')} zł"
 
-    if len(unikalne) >= 4:
-      return f"{unikalne[3]} zł"
-    elif unikalne:
-      return f"{unikalne[-1]} zł"
+      # Jeśli są jakiekolwiek ceny
+      wszystkie = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", soup.get_text())
+      if len(wszystkie) >= 4:
+        return f"{wszystkie[3].replace('.', ',')} zł"
+      elif wszystkie:
+        return f"{wszystkie[-1].replace('.', ',')} zł"
 
-    return "Brak wolnych"
+    except Exception as e:
+      return f"Błąd: {str(e)[:15]}"
 
-  except Exception as e:
-    return f"Błąd: {str(e)[:20]}"
+  return cena_znaleziona
 
 
 def main():
@@ -76,14 +82,14 @@ def main():
   odczyty = []
 
   for cin, cout in DATES:
-    cena = pobierz_cene_dla_terminu(cin, cout)
+    c = pobierz_dane(cin, cout)
     odczyty.append({
         "data": teraz,
         "termin": f"{cin} — {cout}",
-        "cena": cena,
+        "cena": c,
     })
 
-  # Wczytanie i oczyszczenie historii
+  # Historia
   historia = []
   if os.path.exists(DATA_FILE):
     try:
@@ -92,12 +98,17 @@ def main():
     except:
       historia = []
 
-  # Usunięcie starych, błędnych logów
+  # Usunięcie starych błędów
   historia = [
       h
       for h in historia
       if h.get("cena")
-      not in ["Brak odczytu", "Brak wolnych", "600 zł", "4090,20 zł"]
+      not in [
+          "Brak wolnych",
+          "Brak odczytu",
+          "Błąd: HTTPConnectionP",
+          "4090,20 zł",
+      ]
   ]
 
   for o in reversed(odczyty):
@@ -108,7 +119,7 @@ def main():
   with open(DATA_FILE, "w", encoding="utf-8") as f:
     json.dump(historia, f, ensure_ascii=False, indent=2)
 
-  # Generowanie widoku HTML
+  # Czysta tabela
   wiersze = ""
   for h in historia:
     wiersze += f"""
