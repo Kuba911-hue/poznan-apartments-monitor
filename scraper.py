@@ -15,61 +15,80 @@ DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
 
-def pobierz_dane_terminu(page, cin, cout):
-  # Bezpośrednie wywołanie widgetu rezerwacji widocznego na screenach
-  urls = [
-      f"https://panel.hotres.pl/v4_step1?oid=3292&lang=pl&arrival={cin}&departure={cout}&adults=2",
-      f"https://panel.hotres.pl/v4_step1?oid=poznanapartments&lang=pl&arrival={cin}&departure={cout}&adults=2",
-      f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2",
-  ]
+def pobierz_cene(browser, cin, cout):
+  context = browser.new_context(
+      viewport={"width": 1440, "height": 900},
+      locale="pl-PL",
+      user_agent=(
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      ),
+  )
+  page = context.new_page()
+  przechwycone_dane = []
 
-  cena_delux = "Brak odczytu"
-
-  for url in urls:
+  # 1. Przechwytujemy odpowiedzi sieciowe JSON w tle
+  def on_response(response):
     try:
-      page.goto(url, wait_until="networkidle", timeout=30000)
-      page.wait_for_timeout(3000)
+      if "hotres" in response.url or "booking" in response.url or "api" in response.url:
+        ct = response.headers.get("content-type", "")
+        if "json" in ct or "javascript" in ct:
+          przechwycone_dane.append(response.text())
+    except:
+      pass
 
-      # Pobieramy zawartość tekstową
-      tekst = page.locator("body").inner_text()
+  page.on("response", on_response)
 
-      # 1. Szukamy konkretnie wariantu Apartament Delux
-      match = re.search(
-          r"Apartament\s+Delux[^\n\r]{0,350}?(\d{2,4}[,\.]\d{2})\s*zł",
-          tekst,
-          re.IGNORECASE | re.DOTALL,
-      )
-      if match:
-        cena_delux = f"{match.group(1).replace('.', ',')} zł"
-        return cena_delux
+  cena_wynik = "Brak odczytu"
 
-      # 2. Jeśli nazwa jest lekko inna, szukamy bloku ze stawką 564,40 zł / Delux
-      kafelki = page.locator("div, article, section").all()
-      for k in kafelki:
-        try:
+  try:
+    url = f"https://www.poznanapartments.com/rezerwacja?arrival={cin}&departure={cout}&adults=2&checkin={cin}&checkout={cout}"
+    page.goto(url, wait_until="load", timeout=45000)
+    page.wait_for_timeout(4000)
+
+    # 2. Próba odczytu bezpośrednio z przechwyconego ruchu sieciowego JSON
+    for surowy_tekst in przechwycone_dane:
+      if "Delux" in surowy_tekst or "564" in surowy_tekst or "price" in surowy_tekst:
+        m = re.search(r"Delux[^\}]*?price[\":\s]+(\d+[\.,]?\d*)", surowy_tekst, re.IGNORECASE)
+        if m:
+          cena_wynik = f"{m.group(1).replace('.', ',')} zł"
+          return cena_wynik
+
+    # 3. Jeśli nie z sieci, skanujemy elementy DOM we wszystkich klatkach
+    for frame in [page] + page.frames:
+      tekst_ramki = frame.content()
+      if "Apartament Delux" in tekst_ramki:
+        # Szukamy wzorca kwoty przypisanej do Delux
+        dopasowanie = re.search(
+            r"Apartament\s+Delux[^\n\r<]{0,400}?(\d{2,4}[,\.]\d{2})\s*zł",
+            frame.locator("body").inner_text(),
+            re.IGNORECASE | re.DOTALL,
+        )
+        if dopasowanie:
+          cena_wynik = f"{dopasowanie.group(1).replace('.', ',')} zł"
+          return cena_wynik
+
+        # Pobranie przez kafelki z przyciskiem "Wybierz"
+        karty = frame.locator("xpath=//*[contains(text(), 'Apartament Delux')]/ancestor::*[contains(., 'zł')][last()]").all()
+        for k in karty:
           t = k.inner_text()
-          if "Delux" in t and "zł" in t and ("WYBIERZ" in t or "od " in t):
-            ceny = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", t)
-            if ceny:
-              cena_delux = f"{ceny[-1].replace('.', ',')} zł"
-              return cena_delux
-        except:
-          continue
+          stawki = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", t)
+          if stawki:
+            cena_wynik = f"{stawki[-1].replace('.', ',')} zł"
+            return cena_wynik
 
-      # 3. Jeśli są jakiekolwiek stawki z kafelków (np. Studio, Standard, Comfort, Delux)
-      wszystkie = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", tekst)
-      if len(wszystkie) >= 5:
-        # Delux jest 5. pozycją z kolei na liście kafelków
-        cena_delux = f"{wszystkie[4].replace('.', ',')} zł"
-        return cena_delux
-      elif wszystkie:
-        cena_delux = f"{wszystkie[-1].replace('.', ',')} zł"
-        return cena_delux
+    # 4. Jeśli wciąż brak, odczytujemy stawkę 4. pokoju z rzędu z całej listy (standardowy układ: Studio -> Standard -> Comfort -> Delux)
+    caly_tekst = page.locator("body").inner_text()
+    wszystkie_kwoty = re.findall(r"(\d{2,4}[,\.]\d{2})\s*zł", caly_tekst)
+    if len(wszystkie_kwoty) >= 4:
+      cena_wynik = f"{wszystkie_kwoty[3].replace('.', ',')} zł"
 
-    except Exception:
-      continue
+  except Exception as e:
+    cena_wynik = f"Błąd: {str(e)[:15]}"
+  finally:
+    context.close()
 
-  return cena_delux
+  return cena_wynik
 
 
 def main():
@@ -83,18 +102,9 @@ def main():
         headless=True,
         args=["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"],
     )
-    context = browser.new_context(
-        viewport={"width": 1440, "height": 900},
-        locale="pl-PL",
-        user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        ),
-    )
-    page = context.new_page()
 
     for cin, cout in DATES:
-      c = pobierz_dane_terminu(page, cin, cout)
+      c = pobierz_cene(browser, cin, cout)
       odczyty.append({
           "data": teraz,
           "termin": f"{cin} — {cout}",
@@ -112,12 +122,8 @@ def main():
     except:
       historia = []
 
-  # Czyścimy stare wpisy "Brak odczytu" i "Brak wolnych"
-  historia = [
-      h
-      for h in historia
-      if "Brak" not in h.get("cena", "") and "600 zł" not in h.get("cena", "")
-  ]
+  # Usunięcie starych wpisów "Brak odczytu"
+  historia = [h for h in historia if h.get("cena") != "Brak odczytu"]
 
   for o in reversed(odczyty):
     historia.insert(0, o)
