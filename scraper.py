@@ -2,9 +2,9 @@ import datetime
 import json
 import os
 import re
-import time
-from bs4 import BeautifulSoup
-from playwright.sync_api import sync_playwright
+import requests
+
+API_KEY = os.environ.get("SCRAPER_API_KEY")
 
 DATES = [
     ("2026-10-03", "2026-10-04"),
@@ -17,51 +17,52 @@ DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
 
-def pobierz_cene_playwright(page, cin, cout):
-  url = f"https://www.poznanapartments.com/rezerwacja?check-in={cin}&check-out={cout}&adults=2&rooms=1"
+def pobierz_cene(cin, cout):
+  # Bezpośrednie odpytanie Profitroom REST API
+  url = f"https://r.profitroom.com/poznanapartments/booking?check-in={cin}&check-out={cout}&adults=2&lang=pl"
+
+  headers = {
+      "User-Agent": (
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      ),
+      "Accept": (
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+      ),
+      "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8",
+  }
 
   try:
-    page.goto(url, wait_until="networkidle", timeout=60000)
-    time.sleep(5)  # Odczekanie na pełny render widgetu rezerwacji
+    # 1. Próba bezpośredniego połączenia ze stabilnym timeoutem
+    resp = requests.get(url, headers=headers, timeout=15)
+    tekst = resp.text
 
-    content = page.content()
-    soup = BeautifulSoup(content, "html.parser")
+    # Szukanie ceny w kodzie odpowiedzi
+    if "Delux" in tekst or "Deluxe" in tekst:
+      m = re.search(
+          r"Delux[^\n\r<]{0,450}?(\d{3,4}[,\.]\d{2})\s*zł",
+          tekst,
+          re.IGNORECASE | re.DOTALL,
+      )
+      if m:
+        return f"{m.group(1).replace('.', ',')} zł"
 
-    # 1. Szukanie w blokach z nazwą Delux
-    for el in soup.find_all(["div", "article", "section", "li"]):
-      text = el.get_text(separator=" ")
-      if ("Delux" in text or "Deluxe" in text) and "zł" in text:
-        prices = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", text)
-        if prices:
-          return f"{prices[-1].replace('.', ',')} zł"
-
-    # 2. Szukanie po pełnej strukturze tekstowej
-    m = re.search(
-        r"Delux[^\n\r<]{0,450}?(\d{3,4}[,\.]\d{2})\s*zł",
-        content,
-        re.IGNORECASE | re.DOTALL,
-    )
-    if m:
-      return f"{m.group(1).replace('.', ',')} zł"
-
-    # 3. Odczyt stawek z kafelków
-    all_prices = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", soup.get_text())
-    valid = [
-        p.replace(".", ",")
-        for p in all_prices
-        if float(p.replace(",", ".")) < 2500
-    ]
-    unique = list(dict.fromkeys(valid))
-
-    if len(unique) >= 5:
-      return f"{unique[4]} zł"
-    elif unique:
-      return f"{unique[-1]} zł"
+    # 2. Zapasowy odczyt wzorca cenowego z odpowiedzi
+    kwoty = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", tekst)
+    if kwoty:
+      # Pomiń nieprawdopodobnie wysokie stawkowe wartości
+      poprawne = [
+          k.replace(".", ",")
+          for k, in kwoty
+          if float(k.replace(",", ".")) < 2500
+      ]
+      if poprawne:
+        return f"{poprawne[0]} zł"
 
     return "Brak wolnych"
 
-  except Exception as e:
-    return f"Błąd: {str(e)[:15]}"
+  except Exception:
+    return "Błąd połączenia"
 
 
 def main():
@@ -70,36 +71,15 @@ def main():
   ).strftime("%Y-%m-%d %H:%M:%S")
   odczyty = []
 
-  with sync_playwright() as p:
-    browser = p.chromium.launch(
-        headless=True,
-        args=[
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            "--disable-blink-features=AutomationControlled",
-        ],
-    )
-    context = browser.new_context(
-        user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        ),
-        viewport={"width": 1280, "height": 800},
-        locale="pl-PL",
-    )
-    page = context.new_page()
+  for cin, cout in DATES:
+    c = pobierz_cene(cin, cout)
+    odczyty.append({
+        "data": teraz,
+        "termin": f"{cin} — {cout}",
+        "cena": c,
+    })
 
-    for cin, cout in DATES:
-      cena = pobierz_cene_playwright(page, cin, cout)
-      odczyty.append({
-          "data": teraz,
-          "termin": f"{cin} — {cout}",
-          "cena": cena,
-      })
-
-    browser.close()
-
-  # Wczytanie i czyszczenie historii
+  # Historia odczytów
   historia = []
   if os.path.exists(DATA_FILE):
     try:
@@ -108,18 +88,12 @@ def main():
     except Exception:
       historia = []
 
+  # Odfiltrowanie błędów z tabeli
   historia = [
       h
       for h in historia
-      if h.get("cena")
-      not in [
-          "Brak wolnych",
-          "Brak odczytu",
-          "600 zł",
-          "4090,20 zł",
-          "Oczekiwanie na oferty (pusty widget)",
-      ]
-      and "Błąd" not in h.get("cena", "")
+      if "Błąd" not in h.get("cena", "")
+      and h.get("cena") not in ["Oczekiwanie na oferty (pusty widget)"]
   ]
 
   for o in reversed(odczyty):
@@ -130,7 +104,7 @@ def main():
   with open(DATA_FILE, "w", encoding="utf-8") as f:
     json.dump(historia, f, ensure_ascii=False, indent=2)
 
-  # HTML
+  # Widok HTML
   wiersze = ""
   for h in historia:
     wiersze += f"""
