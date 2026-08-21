@@ -2,40 +2,36 @@ name: Monitor Cen Deluxe
 
 on:
   schedule:
-    - cron: '0 0,6,12,18 * * *'
+    - cron: '0 8,20 * * *'
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
-  check-price:
+  scrape:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Pobierz kod repozytorium
-        uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          persist-credentials: true
+          python-version: '3.10'
 
-      - name: Konfiguracja Pythona
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright beautifulsoup4 requests
+          playwright install --with-deps chromium
 
-      - name: Instalacja zaleznosci
-        run: pip install -r requirements.txt
-
-      - name: Uruchomienie skryptu sprawdzajacego
+      - name: Run Scraper
         env:
           SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
         run: python scraper.py
 
-      - name: Zapisanie zmian w repozytorium
+      - name: Commit and push changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add index.html dane.json || true
-          git commit -m "Aktualizacja cen przez ScraperAPI [skip ci]" || exit 0
-          git push origin main
+          git add dane.json index.html
+          git commit -m "Auto update cen" || exit 0
+          git push
