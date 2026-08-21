@@ -2,13 +2,13 @@ import datetime
 import json
 import os
 import re
+import time
 from urllib.parse import quote_plus
 from bs4 import BeautifulSoup
 import requests
 
 API_KEY = os.environ.get("SCRAPER_API_KEY")
 
-# 4 weekendy w październiku 2026
 DATES = [
     ("2026-10-03", "2026-10-04"),
     ("2026-10-10", "2026-10-11"),
@@ -20,65 +20,61 @@ DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
 
-def pobierz_cene_profitroom(cin, cout):
+def pobierz_cene(cin, cout):
   if not API_KEY:
-    return "Brak klucza API"
+    return "Brak SCRAPER_API_KEY"
 
-  # Oficjalny format parametrów dla silnika Profitroom
-  target_url = (
-      "https://www.poznanapartments.com/rezerwacja"
-      f"?check-in={cin}&check-out={cout}&adults=2&checkin={cin}&checkout={cout}&rooms=1"
-  )
-  encoded_url = quote_plus(target_url)
+  docelowy_url = f"https://www.poznanapartments.com/rezerwacja?check-in={cin}&check-out={cout}&adults=2&rooms=1"
+  encoded_url = quote_plus(docelowy_url)
 
-  # Zapytanie przez ScraperAPI z pełnym renderowaniem JavaScriptu
-  proxy_url = f"http://api.scraperapi.com?api_key={API_KEY}&url={encoded_url}&render=true&country_code=pl"
+  # ScraperAPI z natywnym parametrem wait=9000 (9 sekund na wykonanie JS widgetu)
+  proxy_url = f"http://api.scraperapi.com?api_key={API_KEY}&url={encoded_url}&render=true&country_code=pl&wait=9000"
 
   try:
-    resp = requests.get(proxy_url, timeout=75)
-    html_text = resp.text
-    soup = BeautifulSoup(html_text, "html.parser")
+    resp = requests.get(proxy_url, timeout=90)
+    tekst = resp.text
 
-    # 1. Szukanie w kontenerze z Apartamentem Delux
-    for el in soup.find_all(["div", "article", "section", "li"]):
+    if resp.status_code != 200:
+      return f"Błąd HTTP {resp.status_code}"
+
+    # 1. Szukanie w blokach z Apartamentem Delux
+    soup = BeautifulSoup(tekst, "html.parser")
+    for el in soup.find_all(["div", "article", "section", "li", "tr"]):
       t = el.get_text(separator=" ")
-      if (
-          "Apartament Delux" in t or "Delux z 1 sypialnią" in t
-      ) and "WYBIERZ" in t:
+      if "Delux" in t and "zł" in t:
         kwoty = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", t)
         if kwoty:
           return f"{kwoty[-1].replace('.', ',')} zł"
 
-    # 2. Szukanie wyrażeniem regularnym w wyrenderowanym tekście
+    # 2. Szukanie wyrażeniem regularnym bezpośrednio w kodzie
     m = re.search(
-        r"Apartament\s+Delux[^\n\r<]{0,400}?(\d{3,4}[,\.]\d{2})\s*zł",
-        html_text,
+        r"Delux[^\n\r<]{0,450}?(\d{3,4}[,\.]\d{2})\s*zł",
+        tekst,
         re.IGNORECASE | re.DOTALL,
     )
     if m:
       return f"{m.group(1).replace('.', ',')} zł"
 
-    # 3. Jeśli są jakiekolwiek kafelki Profitroom ze zniżkami
-    tekst_caly = soup.get_text()
-    if "zł" in tekst_caly:
-      stawki = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", tekst_caly)
-      # Filtrujemy tylko realne stawki jednostkowe za noc (< 2000 zł)
-      prawidlowe = [
-          s.replace(".", ",")
-          for s in stawki
-          if float(s.replace(",", ".")) < 2000
-      ]
-      unikalne = list(dict.fromkeys(prawidlowe))
-      if len(unikalne) >= 5:
-        # Delux jest 5. pozycją na liście (Studio, Studio Fam, Stand, Comf, Delux)
-        return f"{unikalne[4]} zł"
-      elif unikalne:
-        return f"{unikalne[-1]} zł"
+    # 3. Jeśli są jakiekolwiek wyrenderowane stawki na stronie
+    wszystkie = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", soup.get_text())
+    poprawne = [
+        s.replace(".", ",")
+        for s in wszystkie
+        if float(s.replace(",", ".")) < 2500
+    ]
+    unikalne = list(dict.fromkeys(poprawne))
 
-    return "Brak wolnych"
+    if len(unikalne) >= 5:
+      # Pozycja Delux (5. kafelek na liście)
+      return f"{unikalne[4]} zł"
+    elif unikalne:
+      return f"{unikalne[-1]} zł"
+
+    # Jeśli widget nadal nie załadował ofert po 9 sek
+    return "Oczekiwanie na oferty (pusty widget)"
 
   except Exception as e:
-    return f"Błąd: {str(e)[:15]}"
+    return f"Błąd: {str(e)[:18]}"
 
 
 def main():
@@ -88,14 +84,15 @@ def main():
   odczyty = []
 
   for cin, cout in DATES:
-    c = pobierz_cene_profitroom(cin, cout)
+    c = pobierz_cene(cin, cout)
     odczyty.append({
         "data": teraz,
         "termin": f"{cin} — {cout}",
         "cena": c,
     })
+    time.sleep(2)
 
-  # Wczytanie historii
+  # Historia
   historia = []
   if os.path.exists(DATA_FILE):
     try:
@@ -104,7 +101,7 @@ def main():
     except:
       historia = []
 
-  # Czyścimy wszystkie dotychczasowe błędy i nieudane próby
+  # Czyścimy nieudane odczyty
   historia = [
       h
       for h in historia
@@ -114,6 +111,7 @@ def main():
           "Brak odczytu",
           "600 zł",
           "4090,20 zł",
+          "Oczekiwanie na oferty (pusty widget)",
       ]
       and "Błąd" not in h.get("cena", "")
   ]
