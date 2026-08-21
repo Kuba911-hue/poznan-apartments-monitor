@@ -2,9 +2,7 @@ import datetime
 import json
 import os
 import re
-import time
 from urllib.parse import quote_plus
-from bs4 import BeautifulSoup
 import requests
 
 API_KEY = os.environ.get("SCRAPER_API_KEY")
@@ -20,61 +18,77 @@ DATA_FILE = "dane.json"
 HTML_FILE = "index.html"
 
 
-def pobierz_cene(cin, cout):
-  if not API_KEY:
-    return "Brak SCRAPER_API_KEY"
+def pobierz_cene_api(cin, cout):
+  # Bezpośrednie API Profitroom / Upperbooking dla Poznań Apartments
+  target_url = f"https://wis.upperbooking.com/poznanapartments/be-api/booking/offers?checkIn={cin}&checkOut={cout}&occupancy=2"
 
-  docelowy_url = f"https://www.poznanapartments.com/rezerwacja?check-in={cin}&check-out={cout}&adults=2&rooms=1"
-  encoded_url = quote_plus(docelowy_url)
+  if API_KEY:
+    proxy_url = f"http://api.scraperapi.com?api_key={API_KEY}&url={quote_plus(target_url)}"
+  else:
+    proxy_url = target_url
 
-  # ScraperAPI z natywnym parametrem wait=9000 (9 sekund na wykonanie JS widgetu)
-  proxy_url = f"http://api.scraperapi.com?api_key={API_KEY}&url={encoded_url}&render=true&country_code=pl&wait=9000"
+  headers = {
+      "User-Agent": (
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+      ),
+      "Accept": "application/json, text/plain, */*",
+      "Referer": "https://www.poznanapartments.com/",
+  }
 
   try:
-    resp = requests.get(proxy_url, timeout=90)
-    tekst = resp.text
+    resp = requests.get(proxy_url, headers=headers, timeout=40)
 
-    if resp.status_code != 200:
-      return f"Błąd HTTP {resp.status_code}"
+    # Jeśli dostaniemy prawidłowy JSON
+    if resp.status_code == 200:
+      try:
+        data = resp.json()
 
-    # 1. Szukanie w blokach z Apartamentem Delux
-    soup = BeautifulSoup(tekst, "html.parser")
-    for el in soup.find_all(["div", "article", "section", "li", "tr"]):
-      t = el.get_text(separator=" ")
-      if "Delux" in t and "zł" in t:
-        kwoty = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", t)
-        if kwoty:
-          return f"{kwoty[-1].replace('.', ',')} zł"
+        # Przeszukiwanie listy pokoi w odpowiednich strukturach API
+        items = (
+            data.get("offers", [])
+            or data.get("rooms", [])
+            or data.get("results", [])
+        )
+        for item in items:
+          nazwa = item.get("name", "") or item.get("roomName", "")
+          if "Delux" in nazwa or "Deluxe" in nazwa:
+            cena_val = (
+                item.get("price")
+                or item.get("minPrice")
+                or item.get("finalPrice")
+            )
+            if cena_val:
+              return f"{float(cena_val):.2f}".replace(".", ",") + " zł"
 
-    # 2. Szukanie wyrażeniem regularnym bezpośrednio w kodzie
-    m = re.search(
-        r"Delux[^\n\r<]{0,450}?(\d{3,4}[,\.]\d{2})\s*zł",
-        tekst,
-        re.IGNORECASE | re.DOTALL,
-    )
-    if m:
-      return f"{m.group(1).replace('.', ',')} zł"
+        # Parsowanie po tekście, jeśli struktura jest niestandardowa
+        tekst_json = json.dumps(data)
+        m = re.search(
+            r'Delux[^\}]{0,300}?"price":\s*(\d+[\.\,]?\d*)',
+            tekst_json,
+            re.IGNORECASE,
+        )
+        if m:
+          return f"{float(m.group(1)):.2f}".replace(".", ",") + " zł"
+      except Exception:
+        pass
 
-    # 3. Jeśli są jakiekolwiek wyrenderowane stawki na stronie
-    wszystkie = re.findall(r"(\d{3,4}[,\.]\d{2})\s*zł", soup.get_text())
-    poprawne = [
-        s.replace(".", ",")
-        for s in wszystkie
-        if float(s.replace(",", ".")) < 2500
-    ]
-    unikalne = list(dict.fromkeys(poprawne))
+    # Metoda zapasowa: odpytanie skryptu z wymuszoną sesją Hotres/Profitroom
+    fallback_url = f"https://r.profitroom.com/poznanapartments/booking?check-in={cin}&check-out={cout}&adults=2"
+    if API_KEY:
+      proxy_fb = f"http://api.scraperapi.com?api_key={API_KEY}&url={quote_plus(fallback_url)}&render=true&wait=5000"
+      r_fb = requests.get(proxy_fb, timeout=50)
+      m_fb = re.search(
+          r"Delux[^\n\r<]{0,400}?(\d{3,4}[,\.]\d{2})\s*zł",
+          r_fb.text,
+          re.IGNORECASE | re.DOTALL,
+      )
+      if m_fb:
+        return f"{m_fb.group(1).replace('.', ',')} zł"
 
-    if len(unikalne) >= 5:
-      # Pozycja Delux (5. kafelek na liście)
-      return f"{unikalne[4]} zł"
-    elif unikalne:
-      return f"{unikalne[-1]} zł"
-
-    # Jeśli widget nadal nie załadował ofert po 9 sek
-    return "Oczekiwanie na oferty (pusty widget)"
+    return "Brak wolnych"
 
   except Exception as e:
-    return f"Błąd: {str(e)[:18]}"
+    return f"Błąd: {str(e)[:15]}"
 
 
 def main():
@@ -84,15 +98,14 @@ def main():
   odczyty = []
 
   for cin, cout in DATES:
-    c = pobierz_cene(cin, cout)
+    c = pobierz_cene_api(cin, cout)
     odczyty.append({
         "data": teraz,
         "termin": f"{cin} — {cout}",
         "cena": c,
     })
-    time.sleep(2)
 
-  # Historia
+  # Wczytanie historii
   historia = []
   if os.path.exists(DATA_FILE):
     try:
@@ -101,7 +114,7 @@ def main():
     except:
       historia = []
 
-  # Czyścimy nieudane odczyty
+  # Czyszczenie błędnych logów
   historia = [
       h
       for h in historia
@@ -124,7 +137,7 @@ def main():
   with open(DATA_FILE, "w", encoding="utf-8") as f:
     json.dump(historia, f, ensure_ascii=False, indent=2)
 
-  # Czysta tabela HTML
+  # Generowanie tabeli HTML
   wiersze = ""
   for h in historia:
     wiersze += f"""
