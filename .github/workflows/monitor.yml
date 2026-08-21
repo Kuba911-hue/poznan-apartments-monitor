@@ -1,39 +1,123 @@
-name: Monitor Cen Deluxe
+import os
+import asyncio
+import requests
+from playwright.async_api import async_playwright
 
-on:
-  schedule:
-    - cron: '0 8,20 * * *'
-  workflow_dispatch:
+# Pobieranie tokenów z bezpiecznych ustawień GitHuba (Secrets)
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
 
-jobs:
-  scrape:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+CHECK_IN = "2026-09-05"
+CHECK_OUT = "2026-09-06"
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+def wyslij_telegram(tekst):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    requests.post(url, data={"chat_id": CHAT_ID, "text": tekst, "parse_mode": "HTML"})
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install beautifulsoup4 requests
+def wyslij_zdjecie_telegram(sciezka_pliku, podpis):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+    with open(sciezka_pliku, "rb") as photo:
+        requests.post(
+            url, 
+            data={"chat_id": CHAT_ID, "caption": podpis, "parse_mode": "HTML"}, 
+            files={"photo": photo}
+        )
 
-      - name: Run Scraper
-        env:
-          SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
-        run: python scraper.py
+async def pobierz_i_wyslij():
+    print("Otwieranie strony i pobieranie danych...")
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(
+            viewport={'width': 1280, 'height': 900},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+        )
+        page = await context.new_page()
+        page.set_default_timeout(60000)
 
-      - name: Commit and push changes
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add dane.json index.html
-          git commit -m "Auto update cen" || exit 0
-          git pull --rebase origin main
-          git push
+        target_url = f"https://booking.profitroom.com/pl/poznanapartments/pricelist/rooms/?check-in={CHECK_IN}&check-out={CHECK_OUT}&currency=PLN&r1_adults=2"
+        
+        try:
+            await page.goto(target_url, wait_until="domcontentloaded", timeout=60000)
+            await asyncio.sleep(4)
+
+            # Usuwanie banera RODO
+            try:
+                await page.click("text=Zaakceptuj wszystko", timeout=3000)
+                await asyncio.sleep(1)
+            except Exception:
+                pass
+
+            await page.evaluate('''() => {
+                const overlays = document.querySelectorAll('[class*="cookie"], [id*="cookie"], [class*="modal"], [class*="overlay"]');
+                overlays.forEach(el => el.remove());
+            }''')
+
+            # Auto-scroll po zdjęcia
+            await page.evaluate('''async () => {
+                await new Promise((resolve) => {
+                    let totalHeight = 0;
+                    const distance = 300;
+                    const timer = setInterval(() => {
+                        const scrollHeight = document.body.scrollHeight;
+                        window.scrollBy(0, distance);
+                        totalHeight += distance;
+                        if (totalHeight >= scrollHeight) {
+                            clearInterval(timer);
+                            window.scrollTo(0, 0);
+                            resolve();
+                        }
+                    }, 150);
+                });
+            }''')
+            await asyncio.sleep(2)
+
+            # Wykonanie i wysłanie zrzutu ekranu
+            foto_path = "cennik_pelnastrona.png"
+            await page.screenshot(path=foto_path, full_page=True)
+            wyslij_zdjecie_telegram(foto_path, f"<b>📊 Cennik Poznań Apartments</b>\n🗓 {CHECK_IN} - {CHECK_OUT}")
+
+            # Precyzyjne wyciąganie nazw i cen
+            pokoje_dane = await page.evaluate('''() => {
+                const wyniki = [];
+                const cards = Array.from(document.querySelectorAll('div')).filter(el => 
+                    el.innerText && el.innerText.includes('Apartament') && el.innerText.includes('zł')
+                );
+
+                const przetworzone = new Set();
+
+                for (const card of cards) {
+                    const lines = card.innerText.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
+                    const nazwa = lines.find(l => l.includes('Apartament') && l.length < 70);
+
+                    if (nazwa && !przetworzone.has(nazwa)) {
+                        const cenaLine = lines.find(l => 
+                            l.includes('zł') && 
+                            /\\d/.test(l) &&
+                            !l.toLowerCase().includes('od ') && 
+                            !l.toLowerCase().includes('przed obniżką') &&
+                            !l.toLowerCase().includes('30 dni')
+                        );
+
+                        if (cenaLine) {
+                            wyniki.push({ nazwa: nazwa, cena: cenaLine });
+                            przetworzone.add(nazwa);
+                        }
+                    }
+                }
+                return wyniki;
+            }''')
+
+            if pokoje_dane:
+                msg = f"<b>📊 Odczytane Ceny Poznań Apartments ({CHECK_IN} - {CHECK_OUT}):</b>\n\n"
+                for p in pokoje_dane:
+                    msg += f"• <b>{p['nazwa']}</b>: 🟢 <b>{p['cena']}</b>\n"
+                wyslij_telegram(msg)
+                print("Dane zostały wysłane pomyślnie!")
+
+        except Exception as e:
+            print(f"Błąd podczas wykonania: {e}")
+
+        await browser.close()
+
+if __name__ == "__main__":
+    asyncio.run(pobierz_i_wyslij())
