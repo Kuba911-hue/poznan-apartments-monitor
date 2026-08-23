@@ -3,162 +3,97 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <title>Ceny: Apartament Delux</title>
+    <title>Historia Ceny Poznań Apartments</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #e2e8f0; padding: 20px; max-width: 650px; margin: 0 auto; }
-        h2 { margin-bottom: 4px; font-size: 1.3rem; color: #fff; }
-        .time { color: #94a3b8; font-size: 0.85rem; margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
-        th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid #334155; font-size: 0.9rem; }
-        th { background: #111827; color: #94a3b8; font-weight: 600; }
-        .price { font-weight: bold; color: #38bdf8; font-size: 1.05rem; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 20px; background: #f4f6f8; color: #333; }
+        .container { max-width: 1000px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        h1 { text-align: center; color: #1a202c; }
+        .chart-box { margin-top: 30px; position: relative; height: 400px; }
+        select { padding: 10px; font-size: 16px; border-radius: 8px; border: 1px solid #ccc; margin-bottom: 20px; width: 100%; }
     </style>
 </head>
 <body>
-    <h2>Apartament Delux z 1 sypialnią (2 os.)</h2>
-    <div class="time">Ostatnie sprawdzenie: <strong>2026-08-21 22:54:07</strong></div>
-    <table>
-        <thead>
-            <tr>
-                <th>Data sprawdzenia</th>
-                <th>Termin</th>
-                <th>Cena</th>
-            </tr>
-        </thead>
-        <tbody>
+    <div class="container">
+        <h1>📊 Historia Zmian Ceny Poznań Apartments</h1>
+        <label for="terminSelect"><b>Wybierz termin:</b></label>
+        <select id="terminSelect" onchange="aktualizujWykres()"></select>
+        <div class="chart-box">
+            <canvas id="priceChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        let historiaData = [];
+        let myChart = null;
+
+        async function wczytajDane() {
+            const res = await fetch('historia.json');
+            historiaData = await res.json();
             
-        <tr>
-            <td>2026-08-21 22:54:07</td>
-            <td>2026-10-03 — 2026-10-04</td>
-            <td class="price">Brak wolnych</td>
-        </tr>
-        <tr>
-            <td>2026-08-21 22:54:07</td>
-            <td>2026-10-10 — 2026-10-11</td>
-            <td class="price">Brak wolnych</td>
-        </tr>
-        <tr>
-            <td>2026-08-21 22:54:07</td>
-            <td>2026-10-17 — 2026-10-18</td>
-            <td class="price">Brak wolnych</td>
-        </tr>
-        <tr>
-            <td>2026-08-21 22:54:07</td>
-            <td>2026-10-24 — 2026-10-25</td>
-            <td class="price">Brak wolnych</td>
-        </tr>
-        <tr>
-            <td>2026-08-21 18:31:46</td>
-            <td>2026-10-03 — 2026-10-04</td>
-            <td class="price">Brak wolnych</td>
-        </tr>
-        <tr>
-            <td>2026-08-21 18:31:46</td>
-            <td>2026-10-10 — 2026-10-11</td>
-            <td class="price">Brak wolnych</td>
-        </tr>
-        <tr>
-            <td>2026-08-21 18:31:46</td>
-            <td>2026-10-17 — 2026-10-18</td>
-            <td class="price">Brak wolnych</td>
-        </tr>
-        <tr>
-            <td>2026-08-21 18:31:46</td>
-            <td>2026-10-24 — 2026-10-25</td>
-            <td class="price">Brak wolnych</td>
-        </tr>
-        <tr>
-            <td>2026-08-21 18:29:13</td>
-            <td>2026-10-03 — 2026-10-04</td>
-            <td class="price">Brak wolnych</td>
-        </tr>
-        <tr>
-            <td>2026-08-21 18:29:13</td>
-            <td>2026-10-10 — 2026-10-11</td>
-            <td class="price">Brak wolnych</td>
-        </tr>
-        <tr>
-            <td>2026-08-21 18:29:13</td>
-            <td>2026-10-17 — 2026-10-18</td>
-            <td class="price">Brak wolnych</td>
-        </tr>
-        <tr>
-            <td>2026-08-21 18:29:13</td>
-            <td>2026-10-24 — 2026-10-25</td>
-            <td class="price">Brak wolnych</td>
-        </tr>
-        <tr>
-            <td>2026-08-21 18:27:09</td>
-            <td>2026-10-03 — 2026-10-04</td>
-            <td class="price">Brak wolnych</td>
-        </tr>
-        <tr>
-            <td>2026-08-21 18:27:09</td>
-            <td>2026-10-10 — 2026-10-11</td>
-            <td class="price">Brak wolnych</td>
-        </tr>
-        <tr>
-            <td>2026-08-21 18:27:09</td>
-            <td>2026-10-17 — 2026-10-18</td>
-            <td class="price">Brak wolnych</td>
-        </tr>
-        <tr>
-            <td>2026-08-21 18:27:09</td>
-            <td>2026-10-24 — 2026-10-25</td>
-            <td class="price">Brak wolnych</td>
-        </tr>
-        <tr>
-            <td>2026-08-20 22:47:10</td>
-            <td>2026-10-03 — 2026-10-04</td>
-            <td class="price">564,40 zł</td>
-        </tr>
-        <tr>
-            <td>2026-08-20 22:47:10</td>
-            <td>2026-10-10 — 2026-10-11</td>
-            <td class="price">564,40 zł</td>
-        </tr>
-        <tr>
-            <td>2026-08-20 22:47:10</td>
-            <td>2026-10-17 — 2026-10-18</td>
-            <td class="price">564,40 zł</td>
-        </tr>
-        <tr>
-            <td>2026-08-20 22:47:10</td>
-            <td>2026-10-24 — 2026-10-25</td>
-            <td class="price">564,40 zł</td>
-        </tr>
-        <tr>
-            <td>2026-08-20 19:46:12</td>
-            <td>2026-08-29 do 2026-08-30</td>
-            <td class="price">647,40 zł (sprawdź link)</td>
-        </tr>
-        <tr>
-            <td>2026-08-20 14:10:29</td>
-            <td>2026-08-29 do 2026-08-30</td>
-            <td class="price">647,40 zł (sprawdź link)</td>
-        </tr>
-        <tr>
-            <td>2026-08-20 08:05:04</td>
-            <td>2026-08-29 do 2026-08-30</td>
-            <td class="price">647,40 zł (sprawdź link)</td>
-        </tr>
-        <tr>
-            <td>2026-08-20 03:13:31</td>
-            <td>2026-08-29 do 2026-08-30</td>
-            <td class="price">647,40 zł (sprawdź link)</td>
-        </tr>
-        <tr>
-            <td>2026-08-19 21:41:44</td>
-            <td>2026-08-29 do 2026-08-30</td>
-            <td class="price">647,40 zł (sprawdź link)</td>
-        </tr>
-        <tr>
-            <td>2026-08-19 21:36:46</td>
-            <td>2026-08-29 do 2026-08-30</td>
-            <td class="price">647,40 zł (sprawdź link)</td>
-        </tr>
-        </tbody>
-    </table>
+            const terminySet = new Set();
+            historiaData.forEach(entry => {
+                entry.dane.forEach(item => terminySet.add(item.termin));
+            });
+
+            const select = document.getElementById('terminSelect');
+            select.innerHTML = '';
+            terminySet.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t;
+                opt.textContent = t;
+                select.appendChild(opt);
+            });
+
+            aktualizujWykres();
+        }
+
+        function aktualizujWykres() {
+            const wybranyTermin = document.getElementById('terminSelect').value;
+            const czasy = [];
+            const pokojeMap = {};
+
+            historiaData.forEach(entry => {
+                const daneTerminu = entry.dane.find(d => d.termin === wybranyTermin);
+                if (daneTerminu) {
+                    czasy.push(entry.timestamp);
+                    daneTerminu.pokoje.forEach(p => {
+                        if (!pokojeMap[p.nazwa]) pokojeMap[p.nazwa] = [];
+                        const kwota = parseFloat(p.cena.replace(/[^0-9,.]/g, '').replace(',', '.'));
+                        pokojeMap[p.nazwa].push(kwota || null);
+                    });
+                }
+            });
+
+            const datasets = Object.keys(pokojeMap).map((nazwa, idx) => {
+                const kolory = ['#3182ce', '#38a169', '#dd6b20', '#e53e3e', '#805ad5', '#d69e2e', '#319795'];
+                return {
+                    label: nazwa,
+                    data: pokojeMap[nazwa],
+                    borderColor: kolory[idx % kolory.length],
+                    backgroundColor: kolory[idx % kolory.length],
+                    fill: false,
+                    tension: 0.2
+                };
+            });
+
+            if (myChart) myChart.destroy();
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            myChart = new Chart(ctx, {
+                type: 'line',
+                data: { labels: czasy, datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { title: { display: true, text: 'Cena (PLN)' } },
+                        x: { title: { display: true, text: 'Data odczytu' } }
+                    }
+                }
+            });
+        }
+
+        wczytajDane();
+    </script>
 </body>
 </html>
