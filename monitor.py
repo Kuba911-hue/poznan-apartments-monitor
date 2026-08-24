@@ -159,7 +159,6 @@ def wygeneruj_strone_html():
             let minPrice = Infinity;
             let minRoom = "-";
 
-            // Pobranie unikalnych nazw apartamentów
             const roomNames = new Set();
             rawData.forEach(entry => {{
                 if (entry.odczyty) {{
@@ -259,7 +258,6 @@ async def sprawdz_termin(page, check_in, check_out):
         # Pobieranie i czyszczenie cen z kodu strony
         pokoje_dane = await page.evaluate('''() => {
             const wyniki = [];
-            // Szukamy nagłówków kart z apartamentami
             const headers = Array.from(document.querySelectorAll('h2, h3, h4, .room-name, [class*="title"]'))
                 .filter(el => el.innerText && el.innerText.includes('Apartament'));
 
@@ -271,7 +269,6 @@ async def sprawdz_termin(page, check_in, check_out):
                     const text = card.innerText;
                     const lines = text.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
                     
-                    // Szukamy linii zawierającej cenę w PLN
                     const cenaLine = lines.find(l => 
                         l.includes('zł') && 
                         /\\d/.test(l) && 
@@ -312,7 +309,6 @@ async def sprawdz_termin(page, check_in, check_out):
 
 
 async def main():
-    # Sprawdzamy najbliższy weekend (sobota -> niedziela)
     dzis = datetime.now()
     dni_do_soboty = (5 - dzis.weekday()) % 7
     if dni_do_soboty == 0:
