@@ -1009,5 +1009,54 @@
         "cena": "już od 620 zł /noc"
       }
     ]
+  },
+  {
+    "timestamp": "2026-08-24 12:42",
+    "odczyty": [
+      {
+        "nazwa": "Apartament studio standard",
+        "cena": "już od 290 zł /noc"
+      },
+      {
+        "nazwa": "Apartament studio comfort",
+        "cena": "już od 300 zł /noc"
+      },
+      {
+        "nazwa": "Apartament studio family",
+        "cena": "już od 320 zł /noc"
+      },
+      {
+        "nazwa": "Apartament z 1 sypialnią standard",
+        "cena": "już od 370 zł /noc"
+      },
+      {
+        "nazwa": "Apartament z 1 sypialnią comfort",
+        "cena": "już od 390 zł /noc"
+      },
+      {
+        "nazwa": "Apartament Delux z 1 sypialnią",
+        "cena": "już od 420 zł /noc"
+      },
+      {
+        "nazwa": "Apartament widokowy z 1 sypialnią",
+        "cena": "już od 500 zł /noc"
+      },
+      {
+        "nazwa": "Apartament z 2 sypialniami",
+        "cena": "już od 530 zł /noc"
+      },
+      {
+        "nazwa": "Apartament z 2 sypialniami i 2 pojedynczymi łóżkami w jed...",
+        "cena": "już od 530 zł /noc"
+      },
+      {
+        "nazwa": "Apartament z 2 sypialniami i 2 pojedynczymi łóżkami w jednej z sypialni",
+        "cena": "już od 620 zł /noc"
+      },
+      {
+        "nazwa": "Apartament widokowy z 2 sypialniami",
+        "cena": "już od 620 zł /noc"
+      }
+    ]
   }
 ]
