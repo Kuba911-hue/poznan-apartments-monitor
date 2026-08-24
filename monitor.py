@@ -241,8 +241,11 @@ async def sprawdz_termin(page, check_in, check_out):
     print(f"🔗 Otwieram stronę: {url}")
     
     try:
-        await page.goto(url, wait_until="networkidle", timeout=60000)
-        await asyncio.sleep(4)
+        # domcontentloaded zapobiega timeoutom na GitHub Actions
+        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        
+        # Dajemy czas silnikowi rezerwacji na załadowanie cennika w JS
+        await asyncio.sleep(8)
         
         try:
             cookie_btn = page.locator("button:has-text('Akceptuj'), button:has-text('Zgadzam się'), .cookie-btn, #accept-cookies")
