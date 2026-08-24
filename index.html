@@ -1050,15 +1050,14 @@
   }
 ];
 
-        function wyciagnijLiczbe(tekstCeny) {
-            if (!tekstCeny) return null;
-            // Bierzemy pierwszą dopasowaną kwotę, zamieniając przecinek na kropkę
-            const clean = tekstCeny.replace(/\s+/g, '').replace(',', '.');
-            const match = clean.match(/(\d+(?:\.\d{1,2})?)/);
-            return match ? parseFloat(match[1]) : null;
+        function sparsujCene(cenaStr) {
+            if (!cenaStr) return null;
+            let clean = cenaStr.replace(/[^0-9.,]/g, '').replace(',', '.');
+            let val = parseFloat(clean);
+            return isNaN(val) ? null : val;
         }
 
-        if (rawData.length > 0) {
+        if (rawData && rawData.length > 0) {
             document.getElementById('totalReads').innerText = rawData.length;
             const lastEntry = rawData[rawData.length - 1];
             document.getElementById('lastUpdate').innerText = lastEntry.timestamp;
@@ -1071,10 +1070,10 @@
                 if (entry.odczyty) {
                     entry.odczyty.forEach(p => {
                         roomNames.add(p.nazwa);
-                        let kwota = wyciagnijLiczbe(p.cena);
-                        if (kwota && kwota < minPrice) {
+                        let kwota = sparsujCene(p.cena);
+                        if (kwota !== null && kwota < minPrice) {
                             minPrice = kwota;
-                            minRoom = p.nazwa;
+                            minRoom = p.nazwa + " (" + kwota.toFixed(2) + " zł)";
                         }
                     });
                 }
@@ -1094,7 +1093,7 @@
                 const data = rawData.map(entry => {
                     if (!entry.odczyty) return null;
                     const item = entry.odczyty.find(p => p.nazwa === roomName);
-                    return item ? wyciagnijLiczbe(item.cena) : null;
+                    return item ? sparsujCene(item.cena) : null;
                 });
 
                 return {
