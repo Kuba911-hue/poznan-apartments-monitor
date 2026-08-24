@@ -77,7 +77,7 @@ def wygeneruj_strone_html():
         header { margin-bottom: 32px; text-align: center; }
         h1 { font-size: 32px; font-weight: 700; margin: 0 0 8px 0; background: linear-gradient(135deg, #2563eb, #059669); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .subtitle { color: var(--text-muted); margin: 0; font-size: 16px; }
-        .control-panel { background: var(--card-bg); padding: 20px 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 32px; display: flex; gap: 24px; align-items: center; justify-content: space-between; flex-wrap: wrap; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .control-panel { background: var(--card-bg); padding: 20px 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 32px; display: flex; gap: 24px; align-items: center; justify-content: space-between; }
         .control-panel label { font-weight: 600; color: var(--text-main); }
         select { padding: 10px 14px; font-size: 14px; border-radius: 8px; border: 1px solid var(--border); background: #fff; cursor: pointer; min-width: 250px; transition: all 0.2s; }
         select:hover { border-color: var(--primary); }
@@ -95,7 +95,7 @@ def wygeneruj_strone_html():
         .chart-box { position: relative; height: 450px; width: 100%; margin-bottom: 12px; }
         .table-wrapper { overflow-x: auto; border-radius: 8px; }
         .price-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        .price-table th { text-align: left; padding: 14px 16px; background: linear-gradient(135deg, #f8fafc, #f1f5f9); border-bottom: 2px solid var(--border); font-weight: 600; color: var(--text-main); position: sticky; top: 0; }
+        .price-table th { text-align: left; padding: 14px 16px; background: linear-gradient(135deg, #f8fafc, #f1f5f9); border-bottom: 2px solid var(--border); font-weight: 600; color: var(--text-main); }
         .price-table td { padding: 12px 16px; border-bottom: 1px solid var(--border); }
         .price-table tr:hover { background: #fafafa; }
         .price-cell { font-weight: 600; display: flex; align-items: center; gap: 8px; }
@@ -467,7 +467,7 @@ def wygeneruj_strone_html():
 
 async def sprawdz_termin(page, check_in, check_out):
     """Sprawdź cenę dla terminu - dane wysyłane na Telegram i zapisywane do historia.json"""
-    print(f"\\n🔍 Sprawdzanie terminu: {check_in} do {check_out}...")
+    print(f"\n🔍 Sprawdzanie terminu: {check_in} do {check_out}...")
     
     target_url = f"https://booking.profitroom.com/pl/poznanapartments/pricelist/rooms/?check-in={check_in}&check-out={check_out}&currency=PLN&r1_adults=2"
     wynik_terminu = {"termin": f"{check_in} - {check_out}", "pokoje": []}
@@ -531,13 +531,13 @@ async def sprawdz_termin(page, check_in, check_out):
             return wyniki;
         }''')
 
-        if pokoje_dane && pokoje_dane.length > 0:
+        if pokoje_dane and len(pokoje_dane) > 0:
             wynik_terminu["pokoje"] = pokoje_dane
             
             # Wiadomość na Telegram
-            msg = f"<b>📊 Odczytane Ceny Poznań Apartments ({check_in} - {check_out}):</b>\\n\\n"
+            msg = f"<b>📊 Odczytane Ceny Poznań Apartments ({check_in} - {check_out}):</b>\n\n"
             for p in pokoje_dane:
-                msg += f"• <b>{p['nazwa']}</b>: 🟢 <b>{p['cena']}</b>\\n"
+                msg += f"• <b>{p['nazwa']}</b>: 🟢 <b>{p['cena']}</b>\n"
             
             wyslij_zdjecie_telegram(foto_path, msg)
             print(f"   ✓ Znaleziono {len(pokoje_dane)} apartamentów")
@@ -582,7 +582,7 @@ async def pobierz_i_wyslij():
     # Wygeneruj stronę
     wygeneruj_strone_html()
     
-    print("\\n" + "=" * 60)
+    print("\n" + "=" * 60)
     print("✅ GOTOWE!")
     print("=" * 60)
 
