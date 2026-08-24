@@ -1,3 +1,58 @@
+import os
+import json
+import asyncio
+from datetime import datetime, timedelta
+import requests
+from playwright.async_api import async_playwright
+
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
+
+PLIK_HISTORIA = "historia.json"
+
+def wyslij_zdjecie_telegram(zdjecie_path, podpis):
+    if not TELEGRAM_TOKEN or not CHAT_ID:
+        print("❌ Brak TELEGRAM_TOKEN lub CHAT_ID!")
+        return
+    
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+    try:
+        with open(zdjecie_path, "rb") as foto:
+            payload = {
+                "chat_id": CHAT_ID,
+                "caption": podpis,
+                "parse_mode": "HTML"
+            }
+            files = {"photo": foto}
+            res = requests.post(url, data=payload, files=files, timeout=30)
+            if res.status_code == 200:
+                print("✅ Powiadomienie Telegram wysłane!")
+            else:
+                print(f"❌ Błąd Telegram API: {res.status_code} - {res.text}")
+    except Exception as e:
+        print(f"❌ Błąd wysyłania: {e}")
+
+
+def zapisz_do_historii(nowe_odczyty):
+    nowy_wpis = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "odczyty": nowe_odczyty
+    }
+    
+    historia = []
+    if os.path.exists(PLIK_HISTORIA):
+        try:
+            with open(PLIK_HISTORIA, "r", encoding="utf-8") as f:
+                historia = json.load(f)
+        except Exception as e:
+            historia = []
+            
+    historia.append(nowy_wpis)
+    
+    with open(PLIK_HISTORIA, "w", encoding="utf-8") as f:
+        json.dump(historia, f, ensure_ascii=False, indent=2)
+
+
 def wygeneruj_strone_html():
     historia_json_str = "[]"
     if os.path.exists(PLIK_HISTORIA):
@@ -93,12 +148,11 @@ def wygeneruj_strone_html():
     <script>
         const rawData = {historia_json_str};
 
-        function sparsujCene(cenaStr) {{
-            if (!cenaStr) return null;
-            // Usuwamy spacje niełamliwe i zwykłe
-            let clean = cenaStr.replace(/\\s+/g, '').replace(',', '.');
-            // Wyciągamy pierwszą poprawną kwotę (cyfry i ew. kropka)
-            let match = clean.match(/(\\d+(?:\\.\\d{{1,2}})?)/);
+        function wyciagnijLiczbe(tekstCeny) {{
+            if (!tekstCeny) return null;
+            // Bierzemy pierwszą dopasowaną kwotę, zamieniając przecinek na kropkę
+            const clean = tekstCeny.replace(/\\s+/g, '').replace(',', '.');
+            const match = clean.match(/(\\d+(?:\\.\\d{{1,2}})?)/);
             return match ? parseFloat(match[1]) : null;
         }}
 
@@ -115,10 +169,10 @@ def wygeneruj_strone_html():
                 if (entry.odczyty) {{
                     entry.odczyty.forEach(p => {{
                         roomNames.add(p.nazwa);
-                        let kwota = sparsujCene(p.cena);
+                        let kwota = wyciagnijLiczbe(p.cena);
                         if (kwota && kwota < minPrice) {{
                             minPrice = kwota;
-                            minRoom = p.nazwa + " (" + kwota + " zł)";
+                            minRoom = p.nazwa;
                         }}
                     }});
                 }}
@@ -138,7 +192,7 @@ def wygeneruj_strone_html():
                 const data = rawData.map(entry => {{
                     if (!entry.odczyty) return null;
                     const item = entry.odczyty.find(p => p.nazwa === roomName);
-                    return item ? sparsujCene(item.cena) : null;
+                    return item ? wyciagnijLiczbe(item.cena) : null;
                 }});
 
                 return {{
@@ -177,4 +231,103 @@ def wygeneruj_strone_html():
 """
     with open("index.html", "w", encoding="utf-8") as f:
         f.write(html_content)
-    print("🌐 Wygenerowano plik index.html")
+
+
+async def sprawdz_termin(page, check_in, check_out):
+    url = f"https://www.poznan-apartments.pl/pl/apartamenty?check-in={check_in}&check-out={check_out}"
+    print(f"🔗 Otwieram stronę: {url}")
+    
+    try:
+        await page.goto(url, wait_until="networkidle", timeout=60000)
+        await asyncio.sleep(4)
+        
+        try:
+            cookie_btn = page.locator("button:has-text('Akceptuj'), button:has-text('Zgadzam się'), .cookie-btn, #accept-cookies")
+            if await cookie_btn.count() > 0:
+                await cookie_btn.first.click(timeout=3000)
+        except Exception:
+            pass
+
+        foto_path = "pobieranie.png"
+        await page.screenshot(path=foto_path, full_page=True)
+
+        # PRZYWRÓCONY DOKŁADNIE TWÓJ ORYGINALNY KOD SCRAPERA
+        pokoje_dane = await page.evaluate('''() => {
+            const wyniki = [];
+            const elms = document.querySelectorAll('div, section, article');
+            
+            elms.forEach(el => {
+                const text = el.innerText || '';
+                if (text.includes('Apartament') && text.includes('zł')) {
+                    const lines = text.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
+                    for (let i = 0; i < lines.length; i++) {
+                        if (lines[i].startsWith('Apartament')) {
+                            const nazwa = lines[i];
+                            let cena = '';
+                            for (let j = i; j < Math.min(i + 10, lines.length); j++) {
+                                if (lines[j].includes('zł')) {
+                                    cena = lines[j];
+                                    break;
+                                }
+                            }
+                            if (nazwa && cena) {
+                                if (!wyniki.some(w => w.nazwa === nazwa)) {
+                                    wyniki.push({ nazwa, cena });
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            return wyniki;
+        }''')
+
+        print(f"🔎 Odczytane pokoje: {pokoje_dane}")
+
+        if pokoje_dane and len(pokoje_dane) > 0:
+            msg = f"📊 <b>Odczytane Ceny Poznań Apartments ({check_in} - {check_out}):</b>\n\n"
+            for p in pokoje_dane:
+                msg += f"• <b>{p['nazwa']}</b>: 🟢 <b>{p['cena']}</b>\n"
+            
+            wyslij_zdjecie_telegram(foto_path, msg)
+            zapisz_do_historii(pokoje_dane)
+        else:
+            wyslij_zdjecie_telegram(
+                foto_path, 
+                f"⚠️ <b>Uwaga:</b> Wykonano zrzut ekranu dla terminu {check_in} - {check_out}, ale skrypt nie zdołał odczytać bloku cen z widoku strony."
+            )
+
+    except Exception as e:
+        print(f"❌ Błąd: {e}")
+
+
+async def main():
+    dzis = datetime.now()
+    dni_do_soboty = (5 - dzis.weekday()) % 7
+    if dni_do_soboty == 0:
+        dni_do_soboty = 7
+        
+    sobota = dzis + timedelta(days=dni_do_soboty)
+    niedziela = sobota + timedelta(days=1)
+    
+    check_in = sobota.strftime("%Y-%m-%d")
+    check_out = niedziela.strftime("%Y-%m-%d")
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox"]
+        )
+        context = await browser.new_context(
+            viewport={"width": 1280, "height": 800},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+        )
+        page = await context.new_page()
+        
+        await sprawdz_termin(page, check_in, check_out)
+        await browser.close()
+
+    wygeneruj_strone_html()
+
+if __name__ == "__main__":
+    asyncio.run(main())
