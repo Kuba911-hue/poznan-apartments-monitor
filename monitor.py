@@ -12,7 +12,7 @@ PLIK_HISTORIA = "historia.json"
 
 def wyslij_zdjecie_telegram(zdjecie_path, podpis):
     if not TELEGRAM_TOKEN or not CHAT_ID:
-        print("❌ Brak TELEGRAM_TOKEN lub CHAT_ID w zmiennych środowiskowych!")
+        print("❌ Brak TELEGRAM_TOKEN lub CHAT_ID!")
         return
     
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
@@ -26,11 +26,11 @@ def wyslij_zdjecie_telegram(zdjecie_path, podpis):
             files = {"photo": foto}
             res = requests.post(url, data=payload, files=files, timeout=30)
             if res.status_code == 200:
-                print("✅ Powiadomienie Telegram zostało pomyślnie wysłane!")
+                print("✅ Wysyłano na Telegram")
             else:
-                print(f"❌ Błąd wysyłania Telegram API: {res.status_code} - {res.text}")
+                print(f"❌ Błąd Telegram API: {res.status_code} - {res.text}")
     except Exception as e:
-        print(f"❌ Wyjątek podczas wysyłania zdjęcia na Telegram: {e}")
+        print(f"❌ Wyjątek: {e}")
 
 
 def zapisz_do_historii(nowe_odczyty):
@@ -58,11 +58,11 @@ async def sprawdz_termin(page, check_in, check_out):
     print(f"🔗 Otwieram stronę: {url}")
     
     try:
-        await page.goto(url, wait_until="networkidle", timeout=60000)
-        await asyncio.sleep(5)
+        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        await asyncio.sleep(6)
         
         try:
-            cookie_btn = page.locator("button:has-text('Akceptuj'), button:has-text('Zgadzam się')")
+            cookie_btn = page.locator("button:has-text('Akceptuj'), button:has-text('Zgadzam się'), .cookie-btn, #accept-cookies")
             if await cookie_btn.count() > 0:
                 await cookie_btn.first.click(timeout=3000)
         except Exception:
@@ -73,49 +73,34 @@ async def sprawdz_termin(page, check_in, check_out):
 
         pokoje_dane = await page.evaluate('''() => {
             const wyniki = [];
-            const karty = document.querySelectorAll('.room-card, .apartment-item, div[class*="room"], div[class*="apartment"], .card');
+            const elms = document.querySelectorAll('div, section, article, li');
             
-            karty.forEach(karta => {
-                const text = karta.innerText || '';
-                if (text.includes('zł') && (text.includes('Apartament') || text.includes('Studio'))) {
+            elms.forEach(el => {
+                const text = el.innerText || '';
+                if (text.includes('Apartament') && text.includes('zł')) {
                     const lines = text.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
-                    
-                    let nazwa = '';
-                    let cena = '';
-                    
                     for (let i = 0; i < lines.length; i++) {
-                        if (lines[i].toLowerCase().startsWith('apartament') || lines[i].toLowerCase().startsWith('studio')) {
-                            nazwa = lines[i];
-                        }
-                        if (lines[i].includes('zł') && !lines[i].toLowerCase().includes('najniższa')) {
-                            cena = lines[i];
-                        }
-                    }
-                    
-                    if (nazwa && cena) {
-                        if (!wyniki.some(w => w.nazwa === nazwa)) {
-                            wyniki.push({ nazwa, cena });
+                        if (lines[i].startsWith('Apartament')) {
+                            const nazwa = lines[i];
+                            let cena = '';
+                            for (let j = i; j < Math.min(i + 10, lines.length); j++) {
+                                const line = lines[j];
+                                if (line.includes('zł') && 
+                                    !line.toLowerCase().includes('najniższa') && 
+                                    !line.toLowerCase().includes('30 dni')) {
+                                    cena = line;
+                                    break;
+                                }
+                            }
+                            if (nazwa && cena) {
+                                if (!wyniki.some(w => w.nazwa === nazwa)) {
+                                    wyniki.push({ nazwa, cena });
+                                }
+                            }
                         }
                     }
                 }
             });
-
-            // Fallback gdyby karty nie wyłapały wszystkiego
-            if (wyniki.length === 0) {
-                const elms = document.querySelectorAll('h2, h3, h4, .title');
-                elms.forEach(el => {
-                    const parent = el.closest('div') || el.parentElement;
-                    if (parent && parent.innerText.includes('zł')) {
-                        const lines = parent.innerText.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
-                        let nazwa = el.innerText.trim();
-                        let cena = lines.find(l => l.includes('zł') && !l.toLowerCase().includes('najniższa')) || '';
-                        if (nazwa && cena && !wyniki.some(w => w.nazwa === nazwa)) {
-                            wyniki.push({ nazwa, cena });
-                        }
-                    }
-                });
-            }
-
             return wyniki;
         }''')
 
