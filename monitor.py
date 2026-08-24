@@ -1,52 +1,16 @@
-import os
-import json
-import asyncio
-import requests
-from datetime import datetime
-from playwright.async_api import async_playwright
-
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-CHAT_ID = os.environ.get("CHAT_ID")
-
-TERMINY = [
-    ("2026-09-05", "2026-09-06"),
-    ("2026-09-12", "2026-09-13"),
-    ("2026-09-19", "2026-09-20"),
-    ("2026-09-26", "2026-09-27")
-]
-
-HISTORY_FILE = "historia.json"
-
-def wyslij_zdjecie_telegram(sciezka_pliku, podpis):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-    with open(sciezka_pliku, "rb") as photo:
-        requests.post(
-            url, 
-            data={"chat_id": CHAT_ID, "caption": podpis, "parse_mode": "HTML"}, 
-            files={"photo": photo}
-        )
-
-def zapisz_historie(odczytane_dane):
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-    historia = []
-    
+def wygeneruj_strone_html():
+    historia_data = []
     if os.path.exists(HISTORY_FILE):
         try:
             with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-                historia = json.load(f)
-        except Exception:
-            historia = []
+                historia_data = json.load(f)
+        except Exception as e:
+            print(f"Błąd odczytu pliku historii: {e}")
 
-    historia.append({
-        "timestamp": now_str,
-        "dane": odczytane_dane
-    })
+    # Bezpieczna konwersja obiektów Pythona na prawidłowy ciąg JSON dla JS
+    historia_json_str = json.dumps(historia_data, ensure_ascii=False)
 
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(historia, f, ensure_ascii=False, indent=2)
-
-def wygeneruj_strone_html():
-    html_content = """<!DOCTYPE html>
+    html_template = """<!DOCTYPE html>
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
@@ -60,7 +24,7 @@ def wygeneruj_strone_html():
         .container { max-width: 1100px; margin: 0 auto; }
         header { margin-bottom: 24px; text-align: center; }
         h1 { font-size: 26px; font-weight: 700; margin: 0 0 6px 0; }
-        .control-panel { background: var(--card-bg); padding: 18px 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+        .control-panel { background: var(--card-bg); padding: 18px 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
         select { padding: 10px 14px; font-size: 15px; border-radius: 8px; border: 1px solid var(--border); background: #fff; cursor: pointer; }
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
         .stat-card { background: var(--card-bg); padding: 18px 20px; border-radius: 12px; border: 1px solid var(--border); }
@@ -109,40 +73,44 @@ def wygeneruj_strone_html():
     </div>
 
     <script>
-        let historiaData = [];
+        const historiaData = __HISTORIA_JSON__;
         let myChart = null;
 
-        async function wczytajDane() {
-            try {
-                const res = await fetch('historia.json');
-                historiaData = await res.json();
-                
-                const terminySet = new Set();
-                historiaData.forEach(entry => {
-                    entry.dane.forEach(item => terminySet.add(item.termin));
-                });
+        function inicjalizuj() {
+            if (!historiaData || historiaData.length === 0) return;
 
-                const select = document.getElementById('terminSelect');
-                select.innerHTML = '';
-                terminySet.forEach(t => {
-                    const opt = document.createElement('option');
-                    opt.value = t;
-                    opt.textContent = t;
-                    select.appendChild(opt);
-                });
-
-                if (historiaData.length > 0) {
-                    document.getElementById('lastUpdate').textContent = 'Ostatnia aktualizacja: ' + historiaData[historiaData.length - 1].timestamp;
+            const terminySet = new Set();
+            historiaData.forEach(entry => {
+                if (entry.dane) {
+                    entry.dane.forEach(item => {
+                        if (item.pokoje && item.pokoje.length > 0) {
+                            terminySet.add(item.termin);
+                        }
+                    });
                 }
+            });
 
-                aktualizujStrone();
-            } catch (e) {
-                console.error("Błąd ładowania danych", e);
+            const select = document.getElementById('terminSelect');
+            select.innerHTML = '';
+            terminySet.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t;
+                opt.textContent = t;
+                select.appendChild(opt);
+            });
+
+            if (historiaData.length > 0) {
+                document.getElementById('lastUpdate').textContent = 'Ostatnia aktualizacja: ' + historiaData[historiaData.length - 1].timestamp;
             }
+
+            aktualizujStrone();
         }
 
         function aktualizujStrone() {
-            const wybranyTermin = document.getElementById('terminSelect').value;
+            const select = document.getElementById('terminSelect');
+            if (!select.value) return;
+            
+            const wybranyTermin = select.value;
             const czasy = [];
             const pokojeMap = {};
 
@@ -150,8 +118,9 @@ def wygeneruj_strone_html():
             let lowestRoomName = "-";
 
             historiaData.forEach(entry => {
+                if (!entry.dane) return;
                 const daneTerminu = entry.dane.find(d => d.termin === wybranyTermin);
-                if (daneTerminu) {
+                if (daneTerminu && daneTerminu.pokoje && daneTerminu.pokoje.length > 0) {
                     czasy.push(entry.timestamp);
                     daneTerminu.pokoje.forEach(p => {
                         if (!pokojeMap[p.nazwa]) pokojeMap[p.nazwa] = [];
@@ -199,124 +168,11 @@ def wygeneruj_strone_html():
             });
         }
 
-        wczytajDane();
+        inicjalizuj();
     </script>
 </body>
 </html>"""
+
+    html_final = html_template.replace("__HISTORIA_JSON__", historia_json_str)
     with open("index.html", "w", encoding="utf-8") as f:
-        f.write(html_content)
-
-async def sprawdz_termin(page, check_in, check_out):
-    print(f"Sprawdzanie terminu: {check_in} do {check_out}...")
-    target_url = f"https://booking.profitroom.com/pl/poznanapartments/pricelist/rooms/?check-in={check_in}&check-out={check_out}&currency=PLN&r1_adults=2"
-    wynik_terminu = {"termin": f"{check_in} - {check_out}", "pokoje": []}
-
-    try:
-        await page.goto(target_url, wait_until="domcontentloaded", timeout=60000)
-        await asyncio.sleep(4)
-
-        # Usunięcie banera RODO
-        try:
-            await page.click("text=Zaakceptuj wszystko", timeout=3000)
-            await asyncio.sleep(1)
-        except Exception:
-            pass
-
-        await page.evaluate('''() => {
-            const overlays = document.querySelectorAll('[class*="cookie"], [id*="cookie"], [class*="modal"], [class*="overlay"]');
-            overlays.forEach(el => el.remove());
-        }''')
-
-        # Scrollowanie dla załadowania elementów i obrazów
-        await page.evaluate('''async () => {
-            await new Promise((resolve) => {
-                let totalHeight = 0;
-                const distance = 300;
-                const timer = setInterval(() => {
-                    const scrollHeight = document.body.scrollHeight;
-                    window.scrollBy(0, distance);
-                    totalHeight += distance;
-                    if (totalHeight >= scrollHeight) {
-                        clearInterval(timer);
-                        window.scrollTo(0, 0);
-                        resolve();
-                    }
-                }, 150);
-            });
-        }''')
-        await asyncio.sleep(2)
-
-        # Robienie zrzutu ekranu dla bota
-        foto_path = f"cennik_{check_in}.png"
-        await page.screenshot(path=foto_path, full_page=True)
-
-        # Pobieranie struktur cen z kodu strony
-        pokoje_dane = await page.evaluate('''() => {
-            const wyniki = [];
-            const cards = Array.from(document.querySelectorAll('div')).filter(el => 
-                el.innerText && el.innerText.includes('Apartament') && el.innerText.includes('zł')
-            );
-            const przetworzone = new Set();
-
-            for (const card of cards) {
-                const lines = card.innerText.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
-                const nazwa = lines.find(l => l.includes('Apartament') && l.length < 70);
-
-                if (nazwa && !przetworzone.has(nazwa)) {
-                    const cenaLine = lines.find(l => 
-                        l.includes('zł') && 
-                        /\\d/.test(l) &&
-                        !l.toLowerCase().includes('od ') && 
-                        !l.toLowerCase().includes('przed obniżką') &&
-                        !l.toLowerCase().includes('30 dni')
-                    );
-
-                    if (cenaLine) {
-                        wyniki.push({ nazwa: nazwa, cena: cenaLine });
-                        przetworzone.add(nazwa);
-                    }
-                }
-            }
-            return wyniki;
-        }''')
-
-        if pokoje_dane:
-            wynik_terminu["pokoje"] = pokoje_dane
-            msg = f"<b>📊 Odczytane Ceny Poznań Apartments ({check_in} - {check_out}):</b>\n\n"
-            for p in pokoje_dane:
-                msg += f"• <b>{p['nazwa']}</b>: 🟢 <b>{p['cena']}</b>\n"
-            
-            # Wysyłka zdjęcia WRAZ z tekstem na Telegram
-            wyslij_zdjecie_telegram(foto_path, msg)
-
-        # Usunięcie pliku lokalnego po wysłaniu
-        if os.path.exists(foto_path):
-            os.remove(foto_path)
-
-    except Exception as e:
-        print(f"Błąd dla {check_in}: {e}")
-
-    return wynik_terminu
-
-async def pobierz_i_wyslij():
-    wszystkie_dane = []
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            viewport={'width': 1280, 'height': 900},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
-        )
-        page = await context.new_page()
-
-        for check_in, check_out in TERMINY:
-            dane_t = await sprawdz_termin(page, check_in, check_out)
-            wszystkie_dane.append(dane_t)
-            await asyncio.sleep(1)
-
-        await browser.close()
-
-    zapisz_historie(wszystkie_dane)
-    wygeneruj_strone_html()
-
-if __name__ == "__main__":
-    asyncio.run(pobierz_i_wyslij())
+        f.write(html_final)
