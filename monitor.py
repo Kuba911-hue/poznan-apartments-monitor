@@ -12,7 +12,7 @@ PLIK_HISTORIA = "historia.json"
 
 def wyslij_zdjecie_telegram(zdjecie_path, podpis):
     if not TELEGRAM_TOKEN or not CHAT_ID:
-        print("❌ Brak TELEGRAM_TOKEN lub CHAT_ID!")
+        print("❌ Brak TELEGRAM_TOKEN lub CHAT_ID w zmiennych środowiskowych!")
         return
     
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
@@ -26,11 +26,11 @@ def wyslij_zdjecie_telegram(zdjecie_path, podpis):
             files = {"photo": foto}
             res = requests.post(url, data=payload, files=files, timeout=30)
             if res.status_code == 200:
-                print("✅ Powiadomienie Telegram wysłane!")
+                print("✅ Powiadomienie Telegram zostało pomyślnie wysłane!")
             else:
-                print(f"❌ Błąd Telegram API: {res.status_code} - {res.text}")
+                print(f"❌ Błąd wysyłania Telegram API: {res.status_code} - {res.text}")
     except Exception as e:
-        print(f"❌ Błąd wysyłania: {e}")
+        print(f"❌ Wyjątek podczas wysyłania zdjęcia na Telegram: {e}")
 
 
 def zapisz_do_historii(nowe_odczyty):
@@ -45,12 +45,15 @@ def zapisz_do_historii(nowe_odczyty):
             with open(PLIK_HISTORIA, "r", encoding="utf-8") as f:
                 historia = json.load(f)
         except Exception as e:
+            print(f"⚠️ Nie udało się wczytać pliku historii, tworzę nowy: {e}")
             historia = []
             
     historia.append(nowy_wpis)
     
     with open(PLIK_HISTORIA, "w", encoding="utf-8") as f:
         json.dump(historia, f, ensure_ascii=False, indent=2)
+    
+    print(f"💾 Zapisano najnowszy odczyt do {PLIK_HISTORIA}")
 
 
 def wygeneruj_strone_html():
@@ -148,15 +151,14 @@ def wygeneruj_strone_html():
     <script>
         const rawData = {historia_json_str};
 
-        function wyciagnijLiczbe(tekstCeny) {{
-            if (!tekstCeny) return null;
-            // Bierzemy pierwszą dopasowaną kwotę, zamieniając przecinek na kropkę
-            const clean = tekstCeny.replace(/\\s+/g, '').replace(',', '.');
-            const match = clean.match(/(\\d+(?:\\.\\d{{1,2}})?)/);
-            return match ? parseFloat(match[1]) : null;
+        function sparsujCene(cenaStr) {{
+            if (!cenaStr) return null;
+            let clean = cenaStr.replace(/[^0-9.,]/g, '').replace(',', '.');
+            let val = parseFloat(clean);
+            return isNaN(val) ? null : val;
         }}
 
-        if (rawData.length > 0) {{
+        if (rawData && rawData.length > 0) {{
             document.getElementById('totalReads').innerText = rawData.length;
             const lastEntry = rawData[rawData.length - 1];
             document.getElementById('lastUpdate').innerText = lastEntry.timestamp;
@@ -169,10 +171,10 @@ def wygeneruj_strone_html():
                 if (entry.odczyty) {{
                     entry.odczyty.forEach(p => {{
                         roomNames.add(p.nazwa);
-                        let kwota = wyciagnijLiczbe(p.cena);
-                        if (kwota && kwota < minPrice) {{
+                        let kwota = sparsujCene(p.cena);
+                        if (kwota !== null && kwota < minPrice) {{
                             minPrice = kwota;
-                            minRoom = p.nazwa;
+                            minRoom = p.nazwa + " (" + kwota.toFixed(2) + " zł)";
                         }}
                     }});
                 }}
@@ -192,7 +194,7 @@ def wygeneruj_strone_html():
                 const data = rawData.map(entry => {{
                     if (!entry.odczyty) return null;
                     const item = entry.odczyty.find(p => p.nazwa === roomName);
-                    return item ? wyciagnijLiczbe(item.cena) : null;
+                    return item ? sparsujCene(item.cena) : null;
                 }});
 
                 return {{
@@ -231,6 +233,7 @@ def wygeneruj_strone_html():
 """
     with open("index.html", "w", encoding="utf-8") as f:
         f.write(html_content)
+    print("🌐 Wygenerowano plik index.html")
 
 
 async def sprawdz_termin(page, check_in, check_out):
@@ -250,8 +253,8 @@ async def sprawdz_termin(page, check_in, check_out):
 
         foto_path = "pobieranie.png"
         await page.screenshot(path=foto_path, full_page=True)
+        print("📸 Wykonano zrzut ekranu strony.")
 
-        # PRZYWRÓCONY DOKŁADNIE TWÓJ ORYGINALNY KOD SCRAPERA
         pokoje_dane = await page.evaluate('''() => {
             const wyniki = [];
             const elms = document.querySelectorAll('div, section, article');
@@ -265,8 +268,11 @@ async def sprawdz_termin(page, check_in, check_out):
                             const nazwa = lines[i];
                             let cena = '';
                             for (let j = i; j < Math.min(i + 10, lines.length); j++) {
-                                if (lines[j].includes('zł')) {
-                                    cena = lines[j];
+                                const line = lines[j];
+                                if (line.includes('zł') && 
+                                    !line.toLowerCase().includes('najniższa') && 
+                                    !line.toLowerCase().includes('30 dni')) {
+                                    cena = line;
                                     break;
                                 }
                             }
@@ -282,7 +288,7 @@ async def sprawdz_termin(page, check_in, check_out):
             return wyniki;
         }''')
 
-        print(f"🔎 Odczytane pokoje: {pokoje_dane}")
+        print(f"🔎 Odczytane pokoje i ceny: {pokoje_dane}")
 
         if pokoje_dane and len(pokoje_dane) > 0:
             msg = f"📊 <b>Odczytane Ceny Poznań Apartments ({check_in} - {check_out}):</b>\n\n"
@@ -292,13 +298,14 @@ async def sprawdz_termin(page, check_in, check_out):
             wyslij_zdjecie_telegram(foto_path, msg)
             zapisz_do_historii(pokoje_dane)
         else:
+            print("⚠️ Nie odnaleziono cen na stronie – wysyłam powiadomienie ostrzegawcze.")
             wyslij_zdjecie_telegram(
                 foto_path, 
                 f"⚠️ <b>Uwaga:</b> Wykonano zrzut ekranu dla terminu {check_in} - {check_out}, ale skrypt nie zdołał odczytać bloku cen z widoku strony."
             )
 
     except Exception as e:
-        print(f"❌ Błąd: {e}")
+        print(f"❌ Błąd w sprawdz_termin: {e}")
 
 
 async def main():
