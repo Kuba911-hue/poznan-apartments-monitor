@@ -17,9 +17,14 @@ TERMINY = [
 
 HISTORY_FILE = "historia.json"
 
-def wyslij_telegram(tekst):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": CHAT_ID, "text": tekst, "parse_mode": "HTML"})
+def wyslij_zdjecie_telegram(sciezka_pliku, podpis):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+    with open(sciezka_pliku, "rb") as photo:
+        requests.post(
+            url, 
+            data={"chat_id": CHAT_ID, "caption": podpis, "parse_mode": "HTML"}, 
+            files={"photo": photo}
+        )
 
 def zapisz_historie(odczytane_dane):
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -50,155 +55,31 @@ def wygeneruj_strone_html():
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --bg: #f8fafc;
-            --card-bg: #ffffff;
-            --text-main: #0f172a;
-            --text-muted: #64748b;
-            --primary: #2563eb;
-            --border: #e2e8f0;
-        }
-        body { 
-            font-family: 'Inter', -apple-system, sans-serif; 
-            margin: 0; 
-            padding: 24px;
-            background: var(--bg); 
-            color: var(--text-main);
-        }
-        .container { 
-            max-width: 1100px; 
-            margin: 0 auto; 
-        }
-        header {
-            margin-bottom: 28px;
-            text-align: center;
-        }
-        h1 { 
-            font-size: 26px; 
-            font-weight: 700; 
-            margin: 0 0 6px 0;
-            color: var(--text-main);
-        }
-        p.subtitle {
-            margin: 0;
-            color: var(--text-muted);
-            font-size: 14px;
-        }
-        .control-panel {
-            background: var(--card-bg);
-            padding: 18px 24px;
-            border-radius: 12px;
-            border: 1px solid var(--border);
-            margin-bottom: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 16px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        }
-        .control-group {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            flex-grow: 1;
-        }
-        label {
-            font-weight: 600;
-            font-size: 14px;
-            color: var(--text-main);
-            white-space: nowrap;
-        }
-        select { 
-            padding: 10px 14px; 
-            font-size: 15px; 
-            font-weight: 500;
-            border-radius: 8px; 
-            border: 1px solid var(--border); 
-            background-color: #fff;
-            color: var(--text-main);
-            width: 100%;
-            max-width: 320px;
-            cursor: pointer;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-        select:focus {
-            border-color: var(--primary);
-        }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 16px;
-            margin-bottom: 24px;
-        }
-        .stat-card {
-            background: var(--card-bg);
-            padding: 18px 20px;
-            border-radius: 12px;
-            border: 1px solid var(--border);
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-        }
-        .stat-title {
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: var(--text-muted);
-            margin-bottom: 6px;
-        }
-        .stat-value {
-            font-size: 22px;
-            font-weight: 700;
-            color: var(--primary);
-        }
-        .main-card {
-            background: var(--card-bg);
-            padding: 24px;
-            border-radius: 12px;
-            border: 1px solid var(--border);
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-            margin-bottom: 24px;
-        }
-        .card-title {
-            font-size: 16px;
-            font-weight: 600;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .chart-box { 
-            position: relative; 
-            height: 420px; 
-            width: 100%;
-        }
-        .screenshot-container {
-            text-align: center;
-        }
-        .screenshot-container img {
-            max-width: 100%;
-            border-radius: 8px;
-            border: 1px solid var(--border);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-            margin-top: 12px;
-        }
-        @media (max-width: 640px) {
-            body { padding: 12px; }
-            .control-panel { flex-direction: column; align-items: stretch; }
-            select { max-width: 100%; }
-        }
+        :root { --bg: #f8fafc; --card-bg: #ffffff; --text-main: #0f172a; --text-muted: #64748b; --primary: #2563eb; --border: #e2e8f0; }
+        body { font-family: 'Inter', sans-serif; margin: 0; padding: 24px; background: var(--bg); color: var(--text-main); }
+        .container { max-width: 1100px; margin: 0 auto; }
+        header { margin-bottom: 24px; text-align: center; }
+        h1 { font-size: 26px; font-weight: 700; margin: 0 0 6px 0; }
+        .control-panel { background: var(--card-bg); padding: 18px 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+        select { padding: 10px 14px; font-size: 15px; border-radius: 8px; border: 1px solid var(--border); background: #fff; cursor: pointer; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: var(--card-bg); padding: 18px 20px; border-radius: 12px; border: 1px solid var(--border); }
+        .stat-title { font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+        .stat-value { font-size: 22px; font-weight: 700; color: var(--primary); }
+        .main-card { background: var(--card-bg); padding: 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; }
+        .chart-box { position: relative; height: 420px; width: 100%; }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>📊 Monitor Ceny Poznań Apartments</h1>
-            <p class="subtitle">Automatyczne śledzenie stawek w wybranych terminach</p>
+            <p style="color: var(--text-muted); margin:0;">Automatyczne śledzenie stawek</p>
         </header>
 
         <div class="control-panel">
-            <div class="control-group">
-                <label for="terminSelect">Wybierz termin:</label>
+            <div>
+                <label for="terminSelect" style="font-weight:600; margin-right:8px;">Wybierz termin:</label>
                 <select id="terminSelect" onchange="aktualizujStrone()"></select>
             </div>
             <div id="lastUpdate" style="font-size: 13px; color: var(--text-muted);"></div>
@@ -220,19 +101,10 @@ def wygeneruj_strone_html():
         </div>
 
         <div class="main-card">
-            <div class="card-title">
-                <span>📈 Wykres zmian cen</span>
-            </div>
+            <div style="font-size: 16px; font-weight: 600; margin-bottom: 20px;">📈 Wykres zmian cen</div>
             <div class="chart-box">
                 <canvas id="priceChart"></canvas>
             </div>
-        </div>
-
-        <div class="main-card screenshot-container">
-            <div class="card-title">
-                <span>📸 Ostatni zrzut ekranu oferty</span>
-            </div>
-            <img id="screenshotImg" src="" alt="Zrzut ekranu oferty" onerror="this.style.display='none';">
         </div>
     </div>
 
@@ -294,12 +166,10 @@ def wygeneruj_strone_html():
                 }
             });
 
-            // Aktualizacja kart podsumowania
             document.getElementById('minPrice').textContent = lowestPrice !== Infinity ? lowestPrice.toFixed(2) + ' zł' : '-';
             document.getElementById('minRoom').textContent = lowestRoomName;
             document.getElementById('totalChecks').textContent = czasy.length;
 
-            // Wykres
             const colors = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#4b5563'];
             const datasets = Object.keys(pokojeMap).map((nazwa, idx) => ({
                 label: nazwa,
@@ -308,7 +178,6 @@ def wygeneruj_strone_html():
                 backgroundColor: colors[idx % colors.length],
                 borderWidth: 2,
                 pointRadius: 4,
-                pointHoverRadius: 6,
                 fill: false,
                 tension: 0.15
             }));
@@ -322,28 +191,12 @@ def wygeneruj_strone_html():
                     responsive: true,
                     maintainAspectRatio: false,
                     interaction: { mode: 'index', intersect: false },
-                    plugins: {
-                        legend: { position: 'bottom', labels: { boxWidth: 12, padding: 16, font: { family: 'Inter', size: 12 } } },
-                        tooltip: { padding: 12, cornerRadius: 8 }
-                    },
                     scales: {
-                        y: { 
-                            grid: { color: '#f1f5f9' },
-                            title: { display: true, text: 'Cena (PLN)', font: { family: 'Inter', size: 12, weight: '600' } } 
-                        },
-                        x: { 
-                            grid: { display: false },
-                            title: { display: true, text: 'Data i godzina sprawdzania', font: { family: 'Inter', size: 12, weight: '600' } } 
-                        }
+                        y: { grid: { color: '#f1f5f9' }, title: { display: true, text: 'Cena (PLN)' } },
+                        x: { grid: { display: false }, title: { display: true, text: 'Data i godzina sprawdzania' } }
                     }
                 }
             });
-
-            // Aktualizacja zdjęcia
-            const checkInDate = wybranyTermin.split(" - ")[0];
-            const imgEl = document.getElementById('screenshotImg');
-            imgEl.style.display = 'block';
-            imgEl.src = `cennik_${checkInDate}.png?t=` + new Date().getTime();
         }
 
         wczytajDane();
@@ -362,7 +215,7 @@ async def sprawdz_termin(page, check_in, check_out):
         await page.goto(target_url, wait_until="domcontentloaded", timeout=60000)
         await asyncio.sleep(4)
 
-        # Zamknięcie banera RODO
+        # Usunięcie banera RODO
         try:
             await page.click("text=Zaakceptuj wszystko", timeout=3000)
             await asyncio.sleep(1)
@@ -374,7 +227,7 @@ async def sprawdz_termin(page, check_in, check_out):
             overlays.forEach(el => el.remove());
         }''')
 
-        # Scrollowanie dla załadowania obrazów
+        # Scrollowanie dla załadowania elementów i obrazów
         await page.evaluate('''async () => {
             await new Promise((resolve) => {
                 let totalHeight = 0;
@@ -393,11 +246,11 @@ async def sprawdz_termin(page, check_in, check_out):
         }''')
         await asyncio.sleep(2)
 
-        # Robienie zrzutu ekranu dla podglądu na stronie WWW
+        # Robienie zrzutu ekranu dla bota
         foto_path = f"cennik_{check_in}.png"
         await page.screenshot(path=foto_path, full_page=True)
 
-        # Pobieranie struktur cen
+        # Pobieranie struktur cen z kodu strony
         pokoje_dane = await page.evaluate('''() => {
             const wyniki = [];
             const cards = Array.from(document.querySelectorAll('div')).filter(el => 
@@ -432,7 +285,13 @@ async def sprawdz_termin(page, check_in, check_out):
             msg = f"<b>📊 Odczytane Ceny Poznań Apartments ({check_in} - {check_out}):</b>\n\n"
             for p in pokoje_dane:
                 msg += f"• <b>{p['nazwa']}</b>: 🟢 <b>{p['cena']}</b>\n"
-            wyslij_telegram(msg)
+            
+            # Wysyłka zdjęcia WRAZ z tekstem na Telegram
+            wyslij_zdjecie_telegram(foto_path, msg)
+
+        # Usunięcie pliku lokalnego po wysłaniu
+        if os.path.exists(foto_path):
+            os.remove(foto_path)
 
     except Exception as e:
         print(f"Błąd dla {check_in}: {e}")
