@@ -60,7 +60,7 @@ def wygeneruj_strone_html():
         .container { max-width: 1100px; margin: 0 auto; }
         header { margin-bottom: 24px; text-align: center; }
         h1 { font-size: 26px; font-weight: 700; margin: 0 0 6px 0; }
-        .control-panel { background: var(--card-bg); padding: 18px 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+        .control-panel { background: var(--card-bg); padding: 18px 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
         select { padding: 10px 14px; font-size: 15px; border-radius: 8px; border: 1px solid var(--border); background: #fff; cursor: pointer; }
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
         .stat-card { background: var(--card-bg); padding: 18px 20px; border-radius: 12px; border: 1px solid var(--border); }
@@ -68,6 +68,11 @@ def wygeneruj_strone_html():
         .stat-value { font-size: 22px; font-weight: 700; color: var(--primary); }
         .main-card { background: var(--card-bg); padding: 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; }
         .chart-box { position: relative; height: 420px; width: 100%; }
+        .debug-console { background: #1e293b; color: #e2e8f0; padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-top: 24px; font-family: 'Courier New', monospace; font-size: 12px; max-height: 200px; overflow-y: auto; }
+        .debug-log { display: block; margin: 2px 0; }
+        .debug-error { color: #f87171; }
+        .debug-success { color: #86efac; }
+        .debug-info { color: #93c5fd; }
     </style>
 </head>
 <body>
@@ -106,30 +111,75 @@ def wygeneruj_strone_html():
                 <canvas id="priceChart"></canvas>
             </div>
         </div>
+
+        <div class="debug-console" id="debugConsole"></div>
     </div>
 
     <script>
         let historiaData = [];
         let myChart = null;
 
+        // Debug logger
+        function addDebugLog(msg, type = 'info') {
+            const debugConsole = document.getElementById('debugConsole');
+            const logEntry = document.createElement('div');
+            logEntry.className = `debug-log debug-${type}`;
+            logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            debugConsole.appendChild(logEntry);
+            debugConsole.scrollTop = debugConsole.scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${msg}`);
+        }
+
         async function wczytajDane() {
             try {
+                addDebugLog('Ładowanie historia.json...', 'info');
                 const res = await fetch('historia.json');
+                
+                if (!res.ok) {
+                    addDebugLog(`❌ Błąd HTTP ${res.status}: ${res.statusText}`, 'error');
+                    throw new Error(`HTTP ${res.status}`);
+                }
+
                 historiaData = await res.json();
+                addDebugLog(`✓ Załadowano ${historiaData.length} wpisów`, 'success');
+                
+                // Debug: wyświetl strukturę
+                if (historiaData.length > 0) {
+                    addDebugLog(`Struktura: ${JSON.stringify(historiaData[0]).substring(0, 100)}...`, 'info');
+                }
                 
                 const terminySet = new Set();
                 historiaData.forEach(entry => {
-                    entry.dane.forEach(item => terminySet.add(item.termin));
+                    if (!entry.dane) {
+                        addDebugLog(`⚠ Wpis bez pola 'dane': ${JSON.stringify(entry)}`, 'error');
+                        return;
+                    }
+                    entry.dane.forEach(item => {
+                        if (item.termin) {
+                            terminySet.add(item.termin);
+                        } else {
+                            addDebugLog(`⚠ Element dane bez 'termin': ${JSON.stringify(item)}`, 'error');
+                        }
+                    });
                 });
+
+                addDebugLog(`Found ${terminySet.size} terminów: ${Array.from(terminySet).join(', ')}`, 'success');
 
                 const select = document.getElementById('terminSelect');
                 select.innerHTML = '';
-                terminySet.forEach(t => {
+                if (terminySet.size === 0) {
+                    addDebugLog('❌ Brak żadnych terminów w danych!', 'error');
                     const opt = document.createElement('option');
-                    opt.value = t;
-                    opt.textContent = t;
+                    opt.textContent = 'Brak danych';
                     select.appendChild(opt);
-                });
+                } else {
+                    terminySet.forEach(t => {
+                        const opt = document.createElement('option');
+                        opt.value = t;
+                        opt.textContent = t;
+                        select.appendChild(opt);
+                    });
+                }
 
                 if (historiaData.length > 0) {
                     document.getElementById('lastUpdate').textContent = 'Ostatnia aktualizacja: ' + historiaData[historiaData.length - 1].timestamp;
@@ -137,22 +187,27 @@ def wygeneruj_strone_html():
 
                 aktualizujStrone();
             } catch (e) {
+                addDebugLog(`❌ Błąd ładowania: ${e.message}`, 'error');
                 console.error("Błąd ładowania danych", e);
             }
         }
 
         function aktualizujStrone() {
             const wybranyTermin = document.getElementById('terminSelect').value;
+            addDebugLog(`Wybrany termin: "${wybranyTermin}"`, 'info');
+            
             const czasy = [];
             const pokojeMap = {};
 
             let lowestPrice = Infinity;
             let lowestRoomName = "-";
 
-            historiaData.forEach(entry => {
+            historiaData.forEach((entry, entryIdx) => {
                 const daneTerminu = entry.dane.find(d => d.termin === wybranyTermin);
                 if (daneTerminu) {
                     czasy.push(entry.timestamp);
+                    addDebugLog(`Wpis ${entryIdx}: znaleziono ${daneTerminu.pokoje.length} pokoi`, 'info');
+                    
                     daneTerminu.pokoje.forEach(p => {
                         if (!pokojeMap[p.nazwa]) pokojeMap[p.nazwa] = [];
                         const kwota = parseFloat(p.cena.replace(/[^0-9,.]/g, '').replace(',', '.'));
@@ -165,6 +220,8 @@ def wygeneruj_strone_html():
                     });
                 }
             });
+
+            addDebugLog(`Zebrano ${czasy.length} czasów i ${Object.keys(pokojeMap).length} pokoi`, 'success');
 
             document.getElementById('minPrice').textContent = lowestPrice !== Infinity ? lowestPrice.toFixed(2) + ' zł' : '-';
             document.getElementById('minRoom').textContent = lowestRoomName;
@@ -197,6 +254,8 @@ def wygeneruj_strone_html():
                     }
                 }
             });
+            
+            addDebugLog('✓ Strona zaktualizowana', 'success');
         }
 
         wczytajDane();
