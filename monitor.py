@@ -71,79 +71,107 @@ def wygeneruj_strone_html():
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root { --bg: #f8fafc; --card-bg: #ffffff; --text-main: #0f172a; --text-muted: #64748b; --primary: #2563eb; --border: #e2e8f0; --success: #10b981; --danger: #ef4444; }
+        * { box-sizing: border-box; }
         body { font-family: 'Inter', sans-serif; margin: 0; padding: 24px; background: var(--bg); color: var(--text-main); }
-        .container { max-width: 1200px; margin: 0 auto; }
-        header { margin-bottom: 24px; text-align: center; }
-        h1 { font-size: 26px; font-weight: 700; margin: 0 0 6px 0; }
-        .control-panel { background: var(--card-bg); padding: 18px 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-        select { padding: 10px 14px; font-size: 15px; border-radius: 8px; border: 1px solid var(--border); background: #fff; cursor: pointer; }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
-        .stat-card { background: var(--card-bg); padding: 18px 20px; border-radius: 12px; border: 1px solid var(--border); }
-        .stat-title { font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
-        .stat-value { font-size: 24px; font-weight: 700; color: var(--primary); }
-        .stat-change { font-size: 13px; margin-top: 6px; font-weight: 600; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        header { margin-bottom: 32px; text-align: center; }
+        h1 { font-size: 32px; font-weight: 700; margin: 0 0 8px 0; background: linear-gradient(135deg, #2563eb, #059669); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .subtitle { color: var(--text-muted); margin: 0; font-size: 16px; }
+        .control-panel { background: var(--card-bg); padding: 20px 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 32px; display: flex; gap: 24px; align-items: center; justify-content: space-between; flex-wrap: wrap; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .control-panel label { font-weight: 600; color: var(--text-main); }
+        select { padding: 10px 14px; font-size: 14px; border-radius: 8px; border: 1px solid var(--border); background: #fff; cursor: pointer; min-width: 250px; transition: all 0.2s; }
+        select:hover { border-color: var(--primary); }
+        .last-update { font-size: 13px; color: var(--text-muted); font-style: italic; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 32px; }
+        .stat-card { background: var(--card-bg); padding: 24px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: transform 0.2s; }
+        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .stat-title { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px; margin-bottom: 12px; }
+        .stat-value { font-size: 28px; font-weight: 700; color: var(--primary); word-break: break-word; }
+        .stat-change { font-size: 13px; margin-top: 8px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
         .stat-change.up { color: var(--danger); }
         .stat-change.down { color: var(--success); }
-        .main-card { background: var(--card-bg); padding: 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; }
-        .chart-box { position: relative; height: 400px; width: 100%; }
-        .price-table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px; }
-        .price-table th { text-align: left; padding: 12px; background: var(--bg); border-bottom: 2px solid var(--border); font-weight: 600; }
-        .price-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+        .main-card { background: var(--card-bg); padding: 28px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .main-card-title { font-size: 18px; font-weight: 700; margin-bottom: 24px; color: var(--text-main); }
+        .chart-box { position: relative; height: 450px; width: 100%; margin-bottom: 12px; }
+        .table-wrapper { overflow-x: auto; border-radius: 8px; }
+        .price-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .price-table th { text-align: left; padding: 14px 16px; background: linear-gradient(135deg, #f8fafc, #f1f5f9); border-bottom: 2px solid var(--border); font-weight: 600; color: var(--text-main); position: sticky; top: 0; }
+        .price-table td { padding: 12px 16px; border-bottom: 1px solid var(--border); }
         .price-table tr:hover { background: #fafafa; }
-        .price-cell { font-weight: 500; }
+        .price-cell { font-weight: 600; display: flex; align-items: center; gap: 8px; }
         .price-up { color: var(--danger); }
         .price-down { color: var(--success); }
         .price-stable { color: var(--text-muted); }
-        .no-data { padding: 20px; text-align: center; color: var(--text-muted); }
+        .time-cell { font-weight: 700; color: var(--primary); min-width: 140px; }
+        .no-data { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 15px; }
+        .loading { display: none; text-align: center; padding: 40px; }
+        .spinner { border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .error-box { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; padding: 16px; border-radius: 8px; margin-bottom: 24px; }
+        @media (max-width: 768px) {
+            .control-panel { flex-direction: column; align-items: stretch; }
+            select { min-width: auto; }
+            .stats-grid { grid-template-columns: 1fr; }
+            .chart-box { height: 300px; }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>📊 Monitor Ceny Poznań Apartments</h1>
-            <p style="color: var(--text-muted); margin:0;">Automatyczne śledzenie stawek</p>
+            <p class="subtitle">Automatyczne śledzenie zmian stawek w czasie rzeczywistym</p>
         </header>
 
         <div class="control-panel">
-            <div>
-                <label for="terminSelect" style="font-weight:600; margin-right:8px;">Wybierz termin:</label>
+            <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                <label for="terminSelect">Wybierz termin:</label>
                 <select id="terminSelect" onchange="aktualizujStrone()"></select>
             </div>
-            <div id="lastUpdate" style="font-size: 13px; color: var(--text-muted);"></div>
+            <div class="last-update" id="lastUpdate">⏳ Wczytywanie...</div>
         </div>
 
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-title">Najniższa cena</div>
-                <div class="stat-value" id="minPrice">-</div>
-                <div class="stat-change" id="minPriceChange"></div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-title">Najtańszy apartament</div>
-                <div class="stat-value" style="font-size: 16px; word-break: break-word;" id="minRoom">-</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-title">Liczba odczytów</div>
-                <div class="stat-value" id="totalChecks">-</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-title">Średnia zmiana</div>
-                <div class="stat-value" id="avgChange">-</div>
-                <div class="stat-change" id="avgChangeIndicator"></div>
-            </div>
+        <div id="errorBox"></div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Wczytywanie danych...</p>
         </div>
 
-        <div class="main-card">
-            <div style="font-size: 16px; font-weight: 600; margin-bottom: 20px;">📈 Wykres zmian cen</div>
-            <div class="chart-box">
-                <canvas id="priceChart"></canvas>
+        <div id="content" style="display: none;">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-title">💰 Najniższa cena</div>
+                    <div class="stat-value" id="minPrice">-</div>
+                    <div class="stat-change" id="minPriceChange"></div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-title">🏠 Najtańszy apartament</div>
+                    <div class="stat-value" style="font-size: 16px;" id="minRoom">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-title">📈 Liczba odczytów</div>
+                    <div class="stat-value" id="totalChecks">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-title">📊 Średnia zmiana</div>
+                    <div class="stat-value" id="avgChange">-</div>
+                    <div class="stat-change" id="avgChangeIndicator"></div>
+                </div>
             </div>
-        </div>
 
-        <div class="main-card">
-            <div style="font-size: 16px; font-weight: 600; margin-bottom: 16px;">📋 Tabela cen w czasie</div>
-            <div style="overflow-x: auto;">
-                <table class="price-table" id="priceTable"></table>
+            <div class="main-card">
+                <div class="main-card-title">📈 Wykres zmian cen w czasie</div>
+                <div class="chart-box">
+                    <canvas id="priceChart"></canvas>
+                </div>
+            </div>
+
+            <div class="main-card">
+                <div class="main-card-title">📋 Historia cen - Tabela zmian</div>
+                <div class="table-wrapper">
+                    <table class="price-table" id="priceTable"></table>
+                </div>
             </div>
         </div>
     </div>
@@ -153,29 +181,40 @@ def wygeneruj_strone_html():
         let myChart = null;
 
         async function wczytajDane() {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('content').style.display = 'none';
+            
             try {
                 const res = await fetch('historia.json');
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
                 historiaData = await res.json();
+                
                 if (!Array.isArray(historiaData) || historiaData.length === 0) {
-                    document.getElementById('priceTable').innerHTML = '<tr><td class="no-data" colspan="20">Brak danych - uruchom monitor.py</td></tr>';
+                    pokazBladBrakDanych();
                     return;
                 }
 
-                // Zbierz unikalne terminy
+                // Zbierz unikalne terminy z całej historii
                 const terminySet = new Set();
                 historiaData.forEach(entry => {
-                    if (entry.dane && Array.isArray(entry.dane)) {
-                        entry.dane.forEach(item => {
+                    const dane = entry.dane || entry.odczyty;
+                    if (dane && Array.isArray(dane)) {
+                        dane.forEach(item => {
                             if (item.termin) terminySet.add(item.termin);
                         });
                     }
                 });
 
+                if (terminySet.size === 0) {
+                    pokazBladBrakDanych();
+                    return;
+                }
+
                 const select = document.getElementById('terminSelect');
                 select.innerHTML = '';
-                Array.from(terminySet).sort().forEach(t => {
+                const sortedTerminy = Array.from(terminySet).sort();
+                sortedTerminy.forEach(t => {
                     const opt = document.createElement('option');
                     opt.value = t;
                     opt.textContent = t;
@@ -184,14 +223,28 @@ def wygeneruj_strone_html():
 
                 if (historiaData.length > 0) {
                     const lastEntry = historiaData[historiaData.length - 1];
-                    document.getElementById('lastUpdate').textContent = '🕐 ' + lastEntry.timestamp;
+                    document.getElementById('lastUpdate').textContent = '🕐 Ostatnia aktualizacja: ' + lastEntry.timestamp;
                 }
 
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('content').style.display = 'block';
                 aktualizujStrone();
             } catch (e) {
-                console.error("Błąd:", e);
-                document.getElementById('priceTable').innerHTML = '<tr><td class="no-data" colspan="20">❌ Błąd ładowania danych</td></tr>';
+                console.error("Błąd ładowania:", e);
+                document.getElementById('loading').style.display = 'none';
+                pokazBladOgolny(e.message);
             }
+        }
+
+        function pokazBladBrakDanych() {
+            document.getElementById('loading').style.display = 'none';
+            const errorBox = document.getElementById('errorBox');
+            errorBox.innerHTML = '<div class="error-box">❌ Brak danych - uruchom najpierw skrypt monitor.py aby zebrać dane cen.</div>';
+        }
+
+        function pokazBladOgolny(msg) {
+            const errorBox = document.getElementById('errorBox');
+            errorBox.innerHTML = '<div class="error-box">❌ Błąd ładowania danych: ' + msg + '</div>';
         }
 
         function parseCena(cenaStr) {
@@ -205,12 +258,14 @@ def wygeneruj_strone_html():
             if (!termin) return;
 
             const czasy = [];
-            const apartamenty = new Map(); // nazwa -> [{timestamp, cena}]
+            const apartamenty = new Map();
 
-            // Zbierz dane dla wybranego terminu
+            // Zbierz dane dla wybranego terminu ze całej historii
             historiaData.forEach(entry => {
-                if (!entry.dane || !Array.isArray(entry.dane)) return;
-                const termData = entry.dane.find(d => d.termin === termin);
+                const dane = entry.dane || entry.odczyty;
+                if (!dane || !Array.isArray(dane)) return;
+                
+                const termData = dane.find(d => d.termin === termin);
                 if (!termData || !termData.pokoje) return;
 
                 czasy.push(entry.timestamp);
@@ -232,7 +287,6 @@ def wygeneruj_strone_html():
                 return;
             }
 
-            // Sortuj apartamenty alfabetycznie
             const sortedApartamenty = Array.from(apartamenty.keys()).sort();
 
             // Statystyki
@@ -283,15 +337,13 @@ def wygeneruj_strone_html():
             sortedApartamenty.forEach(nazwa => {
                 const th = document.createElement('th');
                 th.textContent = nazwa;
-                th.style.maxWidth = '200px';
                 headerRow.appendChild(th);
             });
 
             czasy.forEach(czas => {
                 const row = table.insertRow();
                 const tdTime = row.insertCell();
-                tdTime.textContent = czas;
-                tdTime.style.fontWeight = '600';
+                tdTime.innerHTML = `<span class="time-cell">${czas}</span>`;
 
                 sortedApartamenty.forEach(nazwa => {
                     const tdPrice = row.insertCell();
@@ -325,7 +377,7 @@ def wygeneruj_strone_html():
 
             // Wykres
             const datasets = sortedApartamenty.map((nazwa, idx) => {
-                const colors = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#4b5563', '#ec4899'];
+                const colors = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#4b5563', '#ec4899', '#14b8a6', '#f59e0b'];
                 const data = apartamenty.get(nazwa).map(d => d.cena);
                 const color = colors[idx % colors.length];
 
@@ -333,12 +385,15 @@ def wygeneruj_strone_html():
                     label: nazwa,
                     data: data,
                     borderColor: color,
-                    backgroundColor: color + '20',
-                    borderWidth: 2,
+                    backgroundColor: color + '15',
+                    borderWidth: 2.5,
                     pointRadius: 5,
+                    pointHoverRadius: 7,
                     pointBackgroundColor: color,
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
                     fill: true,
-                    tension: 0.3
+                    tension: 0.4
                 };
             });
 
@@ -353,14 +408,51 @@ def wygeneruj_strone_html():
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
                     plugins: {
-                        legend: { position: 'top', labels: { usePointStyle: true } }
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 15,
+                                font: { size: 12, weight: '600' }
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            padding: 12,
+                            titleFont: { size: 13, weight: '600' },
+                            bodyFont: { size: 12 },
+                            borderColor: '#fff',
+                            borderWidth: 1
+                        }
                     },
                     scales: {
-                        y: { beginAtZero: false, grid: { color: '#f1f5f9' } },
-                        x: { grid: { display: false } }
-                    },
-                    interaction: { mode: 'index', intersect: false }
+                        y: {
+                            beginAtZero: false,
+                            grid: {
+                                color: '#f1f5f9',
+                                drawBorder: false
+                            },
+                            ticks: {
+                                font: { size: 11 },
+                                callback: function(value) {
+                                    return value + ' zł';
+                                }
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                font: { size: 11 }
+                            }
+                        }
+                    }
                 }
             });
         }
