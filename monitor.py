@@ -237,7 +237,6 @@ def wygeneruj_strone_html():
 
 
 async def sprawdz_termin(page, check_in, check_out):
-    # Właściwy adres URL z właściwą domeną
     url = f"https://poznanapartments.com/pl/apartamenty?check-in={check_in}&check-out={check_out}"
     print(f"🔗 Otwieram stronę: {url}")
     
