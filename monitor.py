@@ -17,23 +17,28 @@ TERMINY = [
 
 HISTORY_FILE = "historia.json"
 
-def wyslij_zdjecie_telegram(sciezka_pliku, podpis):
-    """Wyślij zdjęcie z informacją o cenach na Telegram"""
+def wyslij_wiadomosc_telegram(tekst):
+    """Wyślij tekstową wiadomość na Telegram"""
     if not TELEGRAM_TOKEN or not CHAT_ID:
         print("⚠️ Brak TELEGRAM_TOKEN lub CHAT_ID")
-        return
+        return False
     
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     try:
-        with open(sciezka_pliku, "rb") as photo:
-            requests.post(
-                url, 
-                data={"chat_id": CHAT_ID, "caption": podpis, "parse_mode": "HTML"}, 
-                files={"photo": photo},
-                timeout=10
-            )
+        response = requests.post(
+            url, 
+            json={"chat_id": CHAT_ID, "text": tekst, "parse_mode": "HTML"},
+            timeout=10
+        )
+        if response.status_code == 200:
+            print("✓ Wiadomość wysłana na Telegram")
+            return True
+        else:
+            print(f"❌ Błąd Telegram: {response.status_code} - {response.text}")
+            return False
     except Exception as e:
-        print(f"Błąd wysyłania na Telegram: {e}")
+        print(f"❌ Błąd wysyłania na Telegram: {e}")
+        return False
 
 def zapisz_historie(odczytane_dane):
     """Zapisz dane w prawidłowym formacie"""
@@ -77,7 +82,7 @@ def wygeneruj_strone_html():
         header { margin-bottom: 32px; text-align: center; }
         h1 { font-size: 32px; font-weight: 700; margin: 0 0 8px 0; background: linear-gradient(135deg, #2563eb, #059669); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .subtitle { color: var(--text-muted); margin: 0; font-size: 16px; }
-        .control-panel { background: var(--card-bg); padding: 20px 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 32px; display: flex; gap: 24px; align-items: center; justify-content: space-between; }
+        .control-panel { background: var(--card-bg); padding: 20px 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 32px; display: flex; gap: 24px; align-items: center; }
         .control-panel label { font-weight: 600; color: var(--text-main); }
         select { padding: 10px 14px; font-size: 14px; border-radius: 8px; border: 1px solid var(--border); background: #fff; cursor: pointer; min-width: 250px; transition: all 0.2s; }
         select:hover { border-color: var(--primary); }
@@ -466,13 +471,14 @@ def wygeneruj_strone_html():
     print("✓ Wygenerowano index.html")
 
 async def sprawdz_termin(page, check_in, check_out):
-    """Sprawdź cenę dla terminu - dane wysyłane na Telegram i zapisywane do historia.json"""
+    """Sprawdź cenę dla terminu - z debugowaniem"""
     print(f"\n🔍 Sprawdzanie terminu: {check_in} do {check_out}...")
     
     target_url = f"https://booking.profitroom.com/pl/poznanapartments/pricelist/rooms/?check-in={check_in}&check-out={check_out}&currency=PLN&r1_adults=2"
     wynik_terminu = {"termin": f"{check_in} - {check_out}", "pokoje": []}
 
     try:
+        print(f"   📡 Otwieranie URL: {target_url}")
         await page.goto(target_url, wait_until="domcontentloaded", timeout=60000)
         await asyncio.sleep(4)
 
@@ -481,7 +487,7 @@ async def sprawdz_termin(page, check_in, check_out):
             await page.click("text=Zaakceptuj wszystko", timeout=3000)
             await asyncio.sleep(1)
         except:
-            pass
+            print("   ℹ️ Brak przycisku cookies")
 
         # Usuń overlaye
         await page.evaluate('''() => {
@@ -500,56 +506,98 @@ async def sprawdz_termin(page, check_in, check_out):
         
         await asyncio.sleep(2)
 
-        # Zrzut ekranu
-        foto_path = f"cennik_{check_in}.png"
-        await page.screenshot(path=foto_path, full_page=True)
+        # Zapisz surowy HTML do pliku debugowego
+        html_content = await page.content()
+        debug_file = f"debug_html_{check_in}.html"
+        with open(debug_file, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        print(f"   💾 Zapisano HTML do {debug_file}")
 
-        # Scrape ceny
+        # Scrape ceny - ULEPSZONA WERSJA
         pokoje_dane = await page.evaluate('''() => {
             const wyniki = [];
             const seen = new Set();
 
-            document.querySelectorAll('div').forEach(el => {
-                const text = el.innerText;
-                if (!text || !text.includes('Apartament') || !text.includes('zł')) return;
+            // METODA 1: Szukaj elementów z klasą zawierającą "apartment" lub "room"
+            const apartmentElements = document.querySelectorAll('[class*="apartment"], [class*="room"], [class*="product"]');
+            console.log("Znalezione elementy apartamentów:", apartmentElements.length);
 
-                const lines = text.split('\\n').map(l => l.trim()).filter(l => l);
-                const nazwa = lines.find(l => l.includes('Apartament') && l.length < 100);
-                if (!nazwa || seen.has(nazwa)) return;
-
-                const cenaLine = lines.find(l => 
-                    l.match(/\\d+\\s*zł/) && 
-                    !l.toLowerCase().includes('przed')
-                );
-
-                if (cenaLine && !seen.has(nazwa)) {
-                    wyniki.push({nazwa, cena: cenaLine});
-                    seen.add(nazwa);
+            apartmentElements.forEach(el => {
+                const text = el.innerText?.trim() || '';
+                if (!text || text.length === 0) return;
+                
+                // Szukaj ceny
+                const cenaMatch = text.match(/(\d+(?:\s*|\s)*zł)/);
+                const nazwaMatch = text.match(/Apartament\s+([^\\n]*)/);
+                
+                if (cenaMatch && nazwaMatch) {
+                    const nazwa = nazwaMatch[1].trim().substring(0, 100);
+                    if (!seen.has(nazwa)) {
+                        wyniki.push({
+                            nazwa: nazwa,
+                            cena: cenaMatch[1]
+                        });
+                        seen.add(nazwa);
+                        console.log(`Znaleziono: ${nazwa} - ${cenaMatch[1]}`);
+                    }
                 }
             });
 
+            // METODA 2: Jeśli metoda 1 nie znalazła, szukaj w całym tekście
+            if (wyniki.length === 0) {
+                const bodyText = document.body.innerText;
+                const lines = bodyText.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
+                
+                for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].includes('Apartament')) {
+                        const nazwa = lines[i].substring(0, 100);
+                        // Szukaj ceny w następnych 10 linach
+                        for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
+                            if (lines[j].match(/\\d+\\s*zł/)) {
+                                if (!seen.has(nazwa)) {
+                                    wyniki.push({
+                                        nazwa: nazwa,
+                                        cena: lines[j]
+                                    });
+                                    seen.add(nazwa);
+                                    console.log(`Znaleziono (metoda 2): ${nazwa} - ${lines[j]}`);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            console.log("Razem znaleziono apartamentów:", wyniki.length);
             return wyniki;
         }''')
+
+        print(f"   📊 Znaleziono apartamentów: {len(pokoje_dane)}")
 
         if pokoje_dane and len(pokoje_dane) > 0:
             wynik_terminu["pokoje"] = pokoje_dane
             
-            # Wiadomość na Telegram
+            # Wyślij na Telegram NATYCHMIAST
             msg = f"<b>📊 Odczytane Ceny Poznań Apartments ({check_in} - {check_out}):</b>\n\n"
-            for p in pokoje_dane:
-                msg += f"• <b>{p['nazwa']}</b>: 🟢 <b>{p['cena']}</b>\n"
+            for i, p in enumerate(pokoje_dane, 1):
+                msg += f"{i}. <b>{p['nazwa']}</b>: {p['cena']}\n"
             
-            wyslij_zdjecie_telegram(foto_path, msg)
-            print(f"   ✓ Znaleziono {len(pokoje_dane)} apartamentów")
+            msg += f"\n<i>Razem: {len(pokoje_dane)} apartamentów</i>"
+            
+            wyslij_wiadomosc_telegram(msg)
+            print(f"   ✓ Wysłano na Telegram")
         else:
+            # Wyślij alert na Telegram
+            error_msg = f"⚠️ <b>BRAK DANYCH</b> dla {check_in} - {check_out}\n"
+            error_msg += f"Sprawdź plik debug_html_{check_in}.html"
+            wyslij_wiadomosc_telegram(error_msg)
             print(f"   ⚠️ Nie znaleziono danych dla terminu")
-
-        # Usuń zrzut
-        if os.path.exists(foto_path):
-            os.remove(foto_path)
 
     except Exception as e:
         print(f"   ❌ Błąd: {e}")
+        error_msg = f"❌ <b>BŁĄD SCRAPOWANIA</b>\nTermin: {check_in} - {check_out}\nBłąd: {str(e)}"
+        wyslij_wiadomosc_telegram(error_msg)
 
     return wynik_terminu
 
