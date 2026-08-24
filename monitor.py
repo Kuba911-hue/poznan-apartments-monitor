@@ -18,16 +18,25 @@ TERMINY = [
 HISTORY_FILE = "historia.json"
 
 def wyslij_zdjecie_telegram(sciezka_pliku, podpis):
+    """Wyślij zdjęcie z informacją o cenach na Telegram"""
+    if not TELEGRAM_TOKEN or not CHAT_ID:
+        print("⚠️ Brak TELEGRAM_TOKEN lub CHAT_ID")
+        return
+    
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-    with open(sciezka_pliku, "rb") as photo:
-        requests.post(
-            url, 
-            data={"chat_id": CHAT_ID, "caption": podpis, "parse_mode": "HTML"}, 
-            files={"photo": photo}
-        )
+    try:
+        with open(sciezka_pliku, "rb") as photo:
+            requests.post(
+                url, 
+                data={"chat_id": CHAT_ID, "caption": podpis, "parse_mode": "HTML"}, 
+                files={"photo": photo},
+                timeout=10
+            )
+    except Exception as e:
+        print(f"Błąd wysyłania na Telegram: {e}")
 
 def zapisz_historie(odczytane_dane):
-    """Zapisz dane w prawidłowym formacie z polem 'dane' zawierającym listę terminów"""
+    """Zapisz dane w prawidłowym formacie"""
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
     historia = []
     
@@ -35,19 +44,23 @@ def zapisz_historie(odczytane_dane):
         try:
             with open(HISTORY_FILE, "r", encoding="utf-8") as f:
                 historia = json.load(f)
-        except Exception:
+        except Exception as e:
+            print(f"⚠️ Błąd czytania historii: {e}")
             historia = []
 
-    # Nowy wpis w prawidłowym formacie
+    # Nowy wpis
     historia.append({
         "timestamp": now_str,
-        "dane": odczytane_dane  # Lista słowników z "termin" i "pokoje"
+        "dane": odczytane_dane
     })
 
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(historia, f, ensure_ascii=False, indent=2)
+    
+    print(f"✓ Zapisano {len(historia)} wpisów do historia.json")
 
 def wygeneruj_strone_html():
+    """Generuj stronę HTML z interaktywnym dashboardem"""
     html_content = """<!DOCTYPE html>
 <html lang="pl">
 <head>
@@ -64,29 +77,24 @@ def wygeneruj_strone_html():
         h1 { font-size: 26px; font-weight: 700; margin: 0 0 6px 0; }
         .control-panel { background: var(--card-bg); padding: 18px 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
         select { padding: 10px 14px; font-size: 15px; border-radius: 8px; border: 1px solid var(--border); background: #fff; cursor: pointer; }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
         .stat-card { background: var(--card-bg); padding: 18px 20px; border-radius: 12px; border: 1px solid var(--border); }
-        .stat-title { font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
-        .stat-value { font-size: 22px; font-weight: 700; color: var(--primary); }
-        .stat-change { font-size: 13px; margin-top: 6px; }
+        .stat-title { font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+        .stat-value { font-size: 24px; font-weight: 700; color: var(--primary); }
+        .stat-change { font-size: 13px; margin-top: 6px; font-weight: 600; }
         .stat-change.up { color: var(--danger); }
         .stat-change.down { color: var(--success); }
         .main-card { background: var(--card-bg); padding: 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; }
-        .chart-box { position: relative; height: 420px; width: 100%; }
-        .price-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+        .chart-box { position: relative; height: 400px; width: 100%; }
+        .price-table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px; }
         .price-table th { text-align: left; padding: 12px; background: var(--bg); border-bottom: 2px solid var(--border); font-weight: 600; }
-        .price-table td { padding: 12px; border-bottom: 1px solid var(--border); }
-        .price-table tr:hover { background: var(--bg); }
-        .price-trend { font-size: 13px; font-weight: 600; }
-        .price-trend.up { color: var(--danger); }
-        .price-trend.down { color: var(--success); }
-        .price-trend.stable { color: var(--text-muted); }
-        .debug-console { background: #1e293b; color: #e2e8f0; padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-top: 24px; font-family: 'Courier New', monospace; font-size: 12px; max-height: 200px; overflow-y: auto; }
-        .debug-log { display: block; margin: 2px 0; }
-        .debug-error { color: #f87171; }
-        .debug-success { color: #86efac; }
-        .debug-info { color: #93c5fd; }
-        .debug-warning { color: #fbbf24; }
+        .price-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+        .price-table tr:hover { background: #fafafa; }
+        .price-cell { font-weight: 500; }
+        .price-up { color: var(--danger); }
+        .price-down { color: var(--success); }
+        .price-stable { color: var(--text-muted); }
+        .no-data { padding: 20px; text-align: center; color: var(--text-muted); }
     </style>
 </head>
 <body>
@@ -112,15 +120,15 @@ def wygeneruj_strone_html():
             </div>
             <div class="stat-card">
                 <div class="stat-title">Najtańszy apartament</div>
-                <div class="stat-value" id="minRoom" style="font-size: 15px;">-</div>
+                <div class="stat-value" style="font-size: 16px; word-break: break-word;" id="minRoom">-</div>
             </div>
             <div class="stat-card">
                 <div class="stat-title">Liczba odczytów</div>
-                <div class="stat-value" id="totalChecks" style="color: var(--text-main);">-</div>
+                <div class="stat-value" id="totalChecks">-</div>
             </div>
             <div class="stat-card">
-                <div class="stat-title">Średnia zmiana ceny</div>
-                <div class="stat-value" id="avgChange" style="font-size: 18px;">-</div>
+                <div class="stat-title">Średnia zmiana</div>
+                <div class="stat-value" id="avgChange">-</div>
                 <div class="stat-change" id="avgChangeIndicator"></div>
             </div>
         </div>
@@ -133,68 +141,38 @@ def wygeneruj_strone_html():
         </div>
 
         <div class="main-card">
-            <div style="font-size: 16px; font-weight: 600; margin-bottom: 16px;">📋 Zestawienie cen w czasie</div>
+            <div style="font-size: 16px; font-weight: 600; margin-bottom: 16px;">📋 Tabela cen w czasie</div>
             <div style="overflow-x: auto;">
-                <table class="price-table" id="priceTable">
-                    <thead>
-                        <tr>
-                            <th>Data/Godzina</th>
-                            <th id="apartamentHeader"></th>
-                        </tr>
-                    </thead>
-                    <tbody id="priceTableBody">
-                    </tbody>
-                </table>
+                <table class="price-table" id="priceTable"></table>
             </div>
         </div>
-
-        <div class="debug-console" id="debugConsole"></div>
     </div>
 
     <script>
         let historiaData = [];
         let myChart = null;
 
-        function addDebugLog(msg, type = 'info') {
-            const debugConsole = document.getElementById('debugConsole');
-            const logEntry = document.createElement('div');
-            logEntry.className = `debug-log debug-${type}`;
-            logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-            debugConsole.appendChild(logEntry);
-            debugConsole.scrollTop = debugConsole.scrollHeight;
-        }
-
         async function wczytajDane() {
             try {
-                addDebugLog('Ładowanie historia.json...', 'info');
                 const res = await fetch('historia.json');
-                
-                if (!res.ok) {
-                    addDebugLog(`❌ Błąd HTTP ${res.status}`, 'error');
-                    throw new Error(`HTTP ${res.status}`);
-                }
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
                 historiaData = await res.json();
-                addDebugLog(`✓ Załadowano ${historiaData.length} wpisów`, 'success');
-                
                 if (!Array.isArray(historiaData) || historiaData.length === 0) {
-                    addDebugLog('❌ Brak danych!', 'error');
+                    document.getElementById('priceTable').innerHTML = '<tr><td class="no-data" colspan="20">Brak danych - uruchom monitor.py</td></tr>';
                     return;
                 }
 
+                // Zbierz unikalne terminy
                 const terminySet = new Set();
-                historiaData.forEach((entry) => {
+                historiaData.forEach(entry => {
                     if (entry.dane && Array.isArray(entry.dane)) {
                         entry.dane.forEach(item => {
-                            if (item.termin) {
-                                terminySet.add(item.termin);
-                            }
+                            if (item.termin) terminySet.add(item.termin);
                         });
                     }
                 });
 
-                addDebugLog(`✓ Znaleziono ${terminySet.size} terminów`, 'success');
-                
                 const select = document.getElementById('terminSelect');
                 select.innerHTML = '';
                 Array.from(terminySet).sort().forEach(t => {
@@ -205,183 +183,186 @@ def wygeneruj_strone_html():
                 });
 
                 if (historiaData.length > 0) {
-                    document.getElementById('lastUpdate').textContent = 'Ostatnia aktualizacja: ' + historiaData[historiaData.length - 1].timestamp;
+                    const lastEntry = historiaData[historiaData.length - 1];
+                    document.getElementById('lastUpdate').textContent = '🕐 ' + lastEntry.timestamp;
                 }
 
                 aktualizujStrone();
             } catch (e) {
-                addDebugLog(`❌ Błąd: ${e.message}`, 'error');
+                console.error("Błąd:", e);
+                document.getElementById('priceTable').innerHTML = '<tr><td class="no-data" colspan="20">❌ Błąd ładowania danych</td></tr>';
             }
         }
 
         function parseCena(cenaStr) {
             if (!cenaStr) return null;
-            const liczba = cenaStr.replace(/[^0-9,.]/g, '').replace(',', '.');
-            return parseFloat(liczba) || null;
+            const num = cenaStr.replace(/[^0-9,.]/g, '').replace(',', '.');
+            return parseFloat(num) || null;
         }
 
         function aktualizujStrone() {
-            const wybranyTermin = document.getElementById('terminSelect').value;
-            if (!wybranyTermin) return;
-            
-            const czasy = [];
-            const pokojeMap = {};
-            const pokojeHistory = {}; // Historyczne zmiany cen
+            const termin = document.getElementById('terminSelect').value;
+            if (!termin) return;
 
-            historiaData.forEach((entry) => {
+            const czasy = [];
+            const apartamenty = new Map(); // nazwa -> [{timestamp, cena}]
+
+            // Zbierz dane dla wybranego terminu
+            historiaData.forEach(entry => {
                 if (!entry.dane || !Array.isArray(entry.dane)) return;
-                
-                const daneTerminu = entry.dane.find(d => d.termin === wybranyTermin);
-                if (!daneTerminu || !daneTerminu.pokoje) return;
+                const termData = entry.dane.find(d => d.termin === termin);
+                if (!termData || !termData.pokoje) return;
 
                 czasy.push(entry.timestamp);
-                
-                daneTerminu.pokoje.forEach(p => {
-                    const nazwa = p.nazwa;
+
+                termData.pokoje.forEach(p => {
+                    if (!apartamenty.has(p.nazwa)) {
+                        apartamenty.set(p.nazwa, []);
+                    }
                     const kwota = parseCena(p.cena);
-                    
-                    if (!pokojeMap[nazwa]) pokojeMap[nazwa] = [];
-                    if (!pokojeHistory[nazwa]) pokojeHistory[nazwa] = [];
-                    
-                    pokojeMap[nazwa].push(kwota);
-                    pokojeHistory[nazwa].push({ timestamp: entry.timestamp, cena: kwota });
+                    apartamenty.get(p.nazwa).push({
+                        timestamp: entry.timestamp,
+                        cena: kwota
+                    });
                 });
             });
 
-            // Statystyki
-            let lowestPrice = Infinity;
-            let lowestRoomName = "-";
-            let lowestPriceChange = "";
-            let sumChanges = 0;
-            let changeCount = 0;
-
-            for (const nazwa in pokojeHistory) {
-                const prices = pokojeHistory[nazwa];
-                if (prices.length > 0) {
-                    const lastPrice = prices[prices.length - 1].cena;
-                    const firstPrice = prices[0].cena;
-                    
-                    if (lastPrice !== null && lastPrice < lowestPrice) {
-                        lowestPrice = lastPrice;
-                        lowestRoomName = nazwa;
-                        if (firstPrice !== null && firstPrice !== 0) {
-                            lowestPriceChange = ((lastPrice - firstPrice) / firstPrice * 100).toFixed(1);
-                        }
-                    }
-
-                    if (lastPrice !== null && firstPrice !== null && firstPrice !== 0) {
-                        const change = (lastPrice - firstPrice) / firstPrice * 100;
-                        sumChanges += change;
-                        changeCount++;
-                    }
-                }
-            }
-
-            document.getElementById('minPrice').textContent = lowestPrice !== Infinity ? lowestPrice.toFixed(2) + ' zł' : '-';
-            document.getElementById('minRoom').textContent = lowestRoomName;
-            document.getElementById('totalChecks').textContent = czasy.length;
-
-            if (lowestPriceChange !== "") {
-                const changeElem = document.getElementById('minPriceChange');
-                const isUp = parseFloat(lowestPriceChange) > 0;
-                changeElem.className = 'stat-change ' + (isUp ? 'up' : 'down');
-                changeElem.textContent = (isUp ? '📈' : '📉') + ' ' + Math.abs(lowestPriceChange) + '%';
-            }
-
-            if (changeCount > 0) {
-                const avgChg = sumChanges / changeCount;
-                document.getElementById('avgChange').textContent = Math.abs(avgChg).toFixed(1) + '%';
-                const avgElem = document.getElementById('avgChangeIndicator');
-                avgElem.className = 'stat-change ' + (avgChg > 0 ? 'up' : 'down');
-                avgElem.textContent = (avgChg > 0 ? '📈 wzrost' : '📉 spadek');
-            }
-
-            // Tabela cen
-            const tableBody = document.getElementById('priceTableBody');
-            const headerCell = document.getElementById('apartamentHeader');
-            tableBody.innerHTML = '';
-            
-            if (Object.keys(pokojeMap).length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="2">Brak danych</td></tr>';
+            if (apartamenty.size === 0) {
+                document.getElementById('priceTable').innerHTML = '<tr><td class="no-data" colspan="20">Brak danych dla tego terminu</td></tr>';
                 return;
             }
 
-            const apartamenty = Object.keys(pokojeMap).sort();
-            headerCell.textContent = apartamenty[0];
+            // Sortuj apartamenty alfabetycznie
+            const sortedApartamenty = Array.from(apartamenty.keys()).sort();
 
-            czasy.forEach((czas, idx) => {
-                const row = document.createElement('tr');
-                const timeCell = document.createElement('td');
-                timeCell.textContent = czas;
-                row.appendChild(timeCell);
+            // Statystyki
+            let minPrice = Infinity;
+            let minRoom = '';
+            let sumChange = 0, countChange = 0;
 
-                apartamenty.forEach(nazwa => {
-                    if (idx === 0) {
-                        const th = document.createElement('th');
-                        th.textContent = nazwa;
-                        document.querySelector('.price-table thead tr').appendChild(th);
+            sortedApartamenty.forEach(nazwa => {
+                const prices = apartamenty.get(nazwa);
+                if (prices.length > 0) {
+                    const last = prices[prices.length - 1].cena;
+                    const first = prices[0].cena;
+
+                    if (last !== null && last < minPrice) {
+                        minPrice = last;
+                        minRoom = nazwa;
                     }
 
-                    const cell = document.createElement('td');
-                    const history = pokojeHistory[nazwa] || [];
-                    const priceData = history.find(h => h.timestamp === czas);
-                    
-                    if (priceData && priceData.cena !== null) {
-                        const cena = priceData.cena.toFixed(0);
+                    if (last !== null && first !== null && first !== 0) {
+                        const chg = ((last - first) / first) * 100;
+                        sumChange += chg;
+                        countChange++;
+                    }
+                }
+            });
+
+            document.getElementById('minPrice').textContent = minPrice !== Infinity ? minPrice.toFixed(0) + ' zł' : '-';
+            document.getElementById('minRoom').textContent = minRoom || '-';
+            document.getElementById('totalChecks').textContent = czasy.length;
+
+            if (countChange > 0) {
+                const avg = sumChange / countChange;
+                document.getElementById('avgChange').textContent = Math.abs(avg).toFixed(1) + '%';
+                const elem = document.getElementById('avgChangeIndicator');
+                elem.className = 'stat-change ' + (avg > 0 ? 'up' : 'down');
+                elem.textContent = (avg > 0 ? '📈 wzrost' : '📉 spadek');
+            }
+
+            // Tabela
+            const table = document.getElementById('priceTable');
+            table.innerHTML = '';
+            
+            const headerRow = table.insertRow();
+            const thTime = document.createElement('th');
+            thTime.textContent = 'Data/Godzina';
+            headerRow.appendChild(thTime);
+
+            sortedApartamenty.forEach(nazwa => {
+                const th = document.createElement('th');
+                th.textContent = nazwa;
+                th.style.maxWidth = '200px';
+                headerRow.appendChild(th);
+            });
+
+            czasy.forEach(czas => {
+                const row = table.insertRow();
+                const tdTime = row.insertCell();
+                tdTime.textContent = czas;
+                tdTime.style.fontWeight = '600';
+
+                sortedApartamenty.forEach(nazwa => {
+                    const tdPrice = row.insertCell();
+                    const history = apartamenty.get(nazwa);
+                    const data = history.find(h => h.timestamp === czas);
+
+                    if (data && data.cena !== null) {
                         let trend = '→';
-                        
-                        if (history.length > 1) {
-                            const idx = history.findIndex(h => h.timestamp === czas);
-                            if (idx > 0) {
-                                const prevPrice = history[idx - 1].cena;
-                                if (prevPrice !== null) {
-                                    if (priceData.cena > prevPrice) trend = '📈';
-                                    else if (priceData.cena < prevPrice) trend = '📉';
+                        let trendClass = 'price-stable';
+
+                        const idx = history.indexOf(data);
+                        if (idx > 0) {
+                            const prev = history[idx - 1].cena;
+                            if (prev !== null) {
+                                if (data.cena > prev) {
+                                    trend = '📈';
+                                    trendClass = 'price-up';
+                                } else if (data.cena < prev) {
+                                    trend = '📉';
+                                    trendClass = 'price-down';
                                 }
                             }
                         }
-                        
-                        cell.innerHTML = `<span class="price-trend">${trend} ${cena} zł</span>`;
-                    } else {
-                        cell.textContent = '-';
-                    }
-                    row.appendChild(cell);
-                });
 
-                tableBody.appendChild(row);
+                        tdPrice.innerHTML = `<span class="price-cell ${trendClass}">${trend} ${data.cena.toFixed(0)} zł</span>`;
+                    } else {
+                        tdPrice.textContent = '-';
+                    }
+                });
             });
 
             // Wykres
-            const colors = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#4b5563', '#ec4899'];
-            const datasets = apartamenty.map((nazwa, idx) => ({
-                label: nazwa,
-                data: pokojeMap[nazwa],
-                borderColor: colors[idx % colors.length],
-                backgroundColor: colors[idx % colors.length] + '20',
-                borderWidth: 2,
-                pointRadius: 4,
-                fill: true,
-                tension: 0.2
-            }));
+            const datasets = sortedApartamenty.map((nazwa, idx) => {
+                const colors = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#4b5563', '#ec4899'];
+                const data = apartamenty.get(nazwa).map(d => d.cena);
+                const color = colors[idx % colors.length];
+
+                return {
+                    label: nazwa,
+                    data: data,
+                    borderColor: color,
+                    backgroundColor: color + '20',
+                    borderWidth: 2,
+                    pointRadius: 5,
+                    pointBackgroundColor: color,
+                    fill: true,
+                    tension: 0.3
+                };
+            });
 
             if (myChart) myChart.destroy();
             const ctx = document.getElementById('priceChart').getContext('2d');
             myChart = new Chart(ctx, {
                 type: 'line',
-                data: { labels: czasy, datasets: datasets },
+                data: {
+                    labels: czasy,
+                    datasets: datasets
+                },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    interaction: { mode: 'index', intersect: false },
-                    plugins: { legend: { position: 'top' } },
+                    plugins: {
+                        legend: { position: 'top', labels: { usePointStyle: true } }
+                    },
                     scales: {
-                        y: { grid: { color: '#f1f5f9' } },
+                        y: { beginAtZero: false, grid: { color: '#f1f5f9' } },
                         x: { grid: { display: false } }
-                    }
+                    },
+                    interaction: { mode: 'index', intersect: false }
                 }
             });
-            
-            addDebugLog('✓ Strona zaktualizowana', 'success');
         }
 
         wczytajDane();
@@ -390,10 +371,12 @@ def wygeneruj_strone_html():
 </html>"""
     with open("index.html", "w", encoding="utf-8") as f:
         f.write(html_content)
+    print("✓ Wygenerowano index.html")
 
 async def sprawdz_termin(page, check_in, check_out):
-    """Sprawdzaj cenę dla danego terminu i zwróć wynik w prawidłowym formacie"""
-    print(f"Sprawdzanie terminu: {check_in} do {check_out}...")
+    """Sprawdź cenę dla terminu - dane wysyłane na Telegram i zapisywane do historia.json"""
+    print(f"\\n🔍 Sprawdzanie terminu: {check_in} do {check_out}...")
+    
     target_url = f"https://booking.profitroom.com/pl/poznanapartments/pricelist/rooms/?check-in={check_in}&check-out={check_out}&currency=PLN&r1_adults=2"
     wynik_terminu = {"termin": f"{check_in} - {check_out}", "pokoje": []}
 
@@ -401,112 +384,115 @@ async def sprawdz_termin(page, check_in, check_out):
         await page.goto(target_url, wait_until="domcontentloaded", timeout=60000)
         await asyncio.sleep(4)
 
-        # Usunięcie banera RODO
+        # Zaakceptuj cookies
         try:
             await page.click("text=Zaakceptuj wszystko", timeout=3000)
             await asyncio.sleep(1)
-        except Exception:
+        except:
             pass
 
+        # Usuń overlaye
         await page.evaluate('''() => {
-            const overlays = document.querySelectorAll('[class*="cookie"], [id*="cookie"], [class*="modal"], [class*="overlay"]');
-            overlays.forEach(el => el.remove());
+            document.querySelectorAll('[class*="cookie"], [id*="cookie"], [class*="modal"]').forEach(el => el.remove());
         }''')
 
-        # Scrollowanie dla załadowania elementów i obrazów
+        # Scroll dla załadowania
         await page.evaluate('''async () => {
-            await new Promise((resolve) => {
-                let totalHeight = 0;
-                const distance = 300;
-                const timer = setInterval(() => {
-                    const scrollHeight = document.body.scrollHeight;
-                    window.scrollBy(0, distance);
-                    totalHeight += distance;
-                    if (totalHeight >= scrollHeight) {
-                        clearInterval(timer);
-                        window.scrollTo(0, 0);
-                        resolve();
-                    }
-                }, 150);
-            });
+            let height = 0;
+            for (let i = 0; i < 5; i++) {
+                window.scrollBy(0, 500);
+                await new Promise(r => setTimeout(r, 100));
+            }
+            window.scrollTo(0, 0);
         }''')
+        
         await asyncio.sleep(2)
 
-        # Robienie zrzutu ekranu dla bota
+        # Zrzut ekranu
         foto_path = f"cennik_{check_in}.png"
         await page.screenshot(path=foto_path, full_page=True)
 
-        # Pobieranie struktur cen z kodu strony
+        # Scrape ceny
         pokoje_dane = await page.evaluate('''() => {
             const wyniki = [];
-            const cards = Array.from(document.querySelectorAll('div')).filter(el => 
-                el.innerText && el.innerText.includes('Apartament') && el.innerText.includes('zł')
-            );
-            const przetworzone = new Set();
+            const seen = new Set();
 
-            for (const card of cards) {
-                const lines = card.innerText.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
-                const nazwa = lines.find(l => l.includes('Apartament') && l.length < 70);
+            document.querySelectorAll('div').forEach(el => {
+                const text = el.innerText;
+                if (!text || !text.includes('Apartament') || !text.includes('zł')) return;
 
-                if (nazwa && !przetworzone.has(nazwa)) {
-                    const cenaLine = lines.find(l => 
-                        l.includes('zł') && 
-                        /\\d/.test(l) &&
-                        !l.toLowerCase().includes('od ') && 
-                        !l.toLowerCase().includes('przed obniżką') &&
-                        !l.toLowerCase().includes('30 dni')
-                    );
+                const lines = text.split('\\n').map(l => l.trim()).filter(l => l);
+                const nazwa = lines.find(l => l.includes('Apartament') && l.length < 100);
+                if (!nazwa || seen.has(nazwa)) return;
 
-                    if (cenaLine) {
-                        wyniki.push({ nazwa: nazwa, cena: cenaLine });
-                        przetworzone.add(nazwa);
-                    }
+                const cenaLine = lines.find(l => 
+                    l.match(/\\d+\\s*zł/) && 
+                    !l.toLowerCase().includes('przed')
+                );
+
+                if (cenaLine && !seen.has(nazwa)) {
+                    wyniki.push({nazwa, cena: cenaLine});
+                    seen.add(nazwa);
                 }
-            }
+            });
+
             return wyniki;
         }''')
 
-        if pokoje_dane:
+        if pokoje_dane && pokoje_dane.length > 0:
             wynik_terminu["pokoje"] = pokoje_dane
-            msg = f"<b>📊 Odczytane Ceny Poznań Apartments ({check_in} - {check_out}):</b>\n\n"
-            for p in pokoje_dane:
-                msg += f"• <b>{p['nazwa']}</b>: 🟢 <b>{p['cena']}</b>\n"
             
-            # Wysyłka zdjęcia WRAZ z tekstem na Telegram
+            # Wiadomość na Telegram
+            msg = f"<b>📊 Odczytane Ceny Poznań Apartments ({check_in} - {check_out}):</b>\\n\\n"
+            for p in pokoje_dane:
+                msg += f"• <b>{p['nazwa']}</b>: 🟢 <b>{p['cena']}</b>\\n"
+            
             wyslij_zdjecie_telegram(foto_path, msg)
+            print(f"   ✓ Znaleziono {len(pokoje_dane)} apartamentów")
+        else:
+            print(f"   ⚠️ Nie znaleziono danych dla terminu")
 
-        # Usunięcie pliku lokalnego po wysłaniu
+        # Usuń zrzut
         if os.path.exists(foto_path):
             os.remove(foto_path)
 
     except Exception as e:
-        print(f"Błąd dla {check_in}: {e}")
+        print(f"   ❌ Błąd: {e}")
 
     return wynik_terminu
 
 async def pobierz_i_wyslij():
-    """Główna funkcja - sprawdzaj terminy, zapisuj wyniki i generuj HTML"""
+    """Główna funkcja"""
+    print("=" * 60)
+    print("🚀 Monitor Ceny Poznań Apartments - START")
+    print("=" * 60)
+    
     wszystkie_dane = []
+    
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
             viewport={'width': 1280, 'height': 900},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         )
         page = await context.new_page()
 
         for check_in, check_out in TERMINY:
-            dane_t = await sprawdz_termin(page, check_in, check_out)
-            wszystkie_dane.append(dane_t)
-            await asyncio.sleep(1)
+            dane = await sprawdz_termin(page, check_in, check_out)
+            wszystkie_dane.append(dane)
+            await asyncio.sleep(2)
 
         await browser.close()
 
-    # Zapisz nowe dane
+    # Zapisz do historia.json
     zapisz_historie(wszystkie_dane)
     
     # Wygeneruj stronę
     wygeneruj_strone_html()
+    
+    print("\\n" + "=" * 60)
+    print("✅ GOTOWE!")
+    print("=" * 60)
 
 if __name__ == "__main__":
     asyncio.run(pobierz_i_wyslij())
