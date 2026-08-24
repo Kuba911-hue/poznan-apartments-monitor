@@ -20,7 +20,7 @@
         .stat-value { font-size: 22px; font-weight: 700; color: var(--primary); }
         .main-card { background: var(--card-bg); padding: 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; }
         .chart-box { position: relative; height: 420px; width: 100%; }
-        .debug-console { background: #1e293b; color: #e2e8f0; padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-top: 24px; font-family: 'Courier New', monospace; font-size: 12px; max-height: 200px; overflow-y: auto; }
+        .debug-console { background: #1e293b; color: #e2e8f0; padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-top: 24px; font-family: 'Courier New', monospace; font-size: 12px; max-height: 250px; overflow-y: auto; }
         .debug-log { display: block; margin: 2px 0; }
         .debug-error { color: #f87171; }
         .debug-success { color: #86efac; }
@@ -93,49 +93,73 @@
                     throw new Error(`HTTP ${res.status}`);
                 }
 
-                historiaData = await res.json();
-                addDebugLog(`✓ Załadowano ${historiaData.length} wpisów`, 'success');
+                const rawData = await res.json();
+                addDebugLog(`✓ Załadowano surowe dane`, 'success');
+                addDebugLog(`Typ danych: ${typeof rawData}, Czy tablica: ${Array.isArray(rawData)}`, 'info');
+
+                // Validacja i filtrowanie danych
+                if (!Array.isArray(rawData)) {
+                    addDebugLog('❌ Dane nie są tablicą!', 'error');
+                    return;
+                }
+
+                historiaData = rawData.filter((entry, idx) => {
+                    if (!entry) {
+                        addDebugLog(`⚠️ Wpis ${idx} jest null/undefined`, 'warning');
+                        return false;
+                    }
+                    if (!entry.dane) {
+                        addDebugLog(`⚠️ Wpis ${idx} nie ma pola 'dane' - pomijam`, 'warning');
+                        return false;
+                    }
+                    if (!Array.isArray(entry.dane)) {
+                        addDebugLog(`⚠️ Wpis ${idx}: pole 'dane' nie jest tablicą - pomijam`, 'warning');
+                        return false;
+                    }
+                    return true;
+                });
+
+                addDebugLog(`✓ Po filtracji: ${historiaData.length} wpisów (z ${rawData.length})`, 'success');
                 
                 if (historiaData.length === 0) {
-                    addDebugLog('⚠️ Plik historia.json jest pusty - uruchom monitor.py', 'warning');
+                    addDebugLog('❌ Brak ważnych wpisów po filtracji!', 'error');
+                    addDebugLog('Sprawdź strukturę historia.json', 'warning');
                     return;
                 }
                 
-                // Debug: wyświetl strukturę
-                addDebugLog(`Struktura: ${JSON.stringify(historiaData[0]).substring(0, 100)}...`, 'info');
+                // Debug: wyświetl strukturę pierwszego wpisu
+                if (historiaData.length > 0) {
+                    addDebugLog(`Struktura pierwszego wpisu: ${JSON.stringify(historiaData[0]).substring(0, 120)}...`, 'info');
+                }
                 
                 const terminySet = new Set();
-                historiaData.forEach(entry => {
-                    if (!entry.dane) {
-                        addDebugLog(`⚠ Wpis bez pola 'dane': ${JSON.stringify(entry)}`, 'error');
-                        return;
+                historiaData.forEach((entry, entryIdx) => {
+                    if (entry.dane && Array.isArray(entry.dane)) {
+                        entry.dane.forEach(item => {
+                            if (item.termin) {
+                                terminySet.add(item.termin);
+                            }
+                        });
                     }
-                    entry.dane.forEach(item => {
-                        if (item.termin) {
-                            terminySet.add(item.termin);
-                        } else {
-                            addDebugLog(`⚠ Element dane bez 'termin': ${JSON.stringify(item)}`, 'error');
-                        }
-                    });
                 });
 
-                addDebugLog(`Found ${terminySet.size} terminów: ${Array.from(terminySet).join(', ')}`, 'success');
+                addDebugLog(`✓ Znaleziono ${terminySet.size} unique terminów`, 'success');
+                
+                if (terminySet.size === 0) {
+                    addDebugLog('❌ Brak terminów w danych!', 'error');
+                    return;
+                }
 
                 const select = document.getElementById('terminSelect');
                 select.innerHTML = '';
-                if (terminySet.size === 0) {
-                    addDebugLog('❌ Brak żadnych terminów w danych!', 'error');
+                Array.from(terminySet).sort().forEach(t => {
                     const opt = document.createElement('option');
-                    opt.textContent = 'Brak danych';
+                    opt.value = t;
+                    opt.textContent = t;
                     select.appendChild(opt);
-                } else {
-                    Array.from(terminySet).sort().forEach(t => {
-                        const opt = document.createElement('option');
-                        opt.value = t;
-                        opt.textContent = t;
-                        select.appendChild(opt);
-                    });
-                }
+                });
+
+                addDebugLog(`✓ Zapełniono dropdown ${terminySet.size} terminami`, 'success');
 
                 if (historiaData.length > 0) {
                     document.getElementById('lastUpdate').textContent = 'Ostatnia aktualizacja: ' + historiaData[historiaData.length - 1].timestamp;
@@ -144,6 +168,7 @@
                 aktualizujStrone();
             } catch (e) {
                 addDebugLog(`❌ Błąd ładowania: ${e.message}`, 'error');
+                addDebugLog(`Stack: ${e.stack}`, 'error');
                 console.error("Błąd ładowania danych", e);
             }
         }
@@ -164,25 +189,37 @@
             let lowestRoomName = "-";
 
             historiaData.forEach((entry, entryIdx) => {
+                if (!entry.dane || !Array.isArray(entry.dane)) {
+                    return;
+                }
+                
                 const daneTerminu = entry.dane.find(d => d.termin === wybranyTermin);
                 if (daneTerminu) {
                     czasy.push(entry.timestamp);
-                    addDebugLog(`Wpis ${entryIdx}: znaleziono ${daneTerminu.pokoje.length} pokoi`, 'info');
                     
-                    daneTerminu.pokoje.forEach(p => {
-                        if (!pokojeMap[p.nazwa]) pokojeMap[p.nazwa] = [];
-                        const kwota = parseFloat(p.cena.replace(/[^0-9,.]/g, '').replace(',', '.'));
-                        pokojeMap[p.nazwa].push(kwota || null);
+                    if (daneTerminu.pokoje && Array.isArray(daneTerminu.pokoje)) {
+                        addDebugLog(`Wpis ${entryIdx}: znaleziono ${daneTerminu.pokoje.length} pokoi`, 'info');
+                        
+                        daneTerminu.pokoje.forEach(p => {
+                            if (!p.nazwa || !p.cena) {
+                                addDebugLog(`⚠️ Pokój bez nazwy lub ceny: ${JSON.stringify(p)}`, 'warning');
+                                return;
+                            }
+                            
+                            if (!pokojeMap[p.nazwa]) pokojeMap[p.nazwa] = [];
+                            const kwota = parseFloat(p.cena.replace(/[^0-9,.]/g, '').replace(',', '.'));
+                            pokojeMap[p.nazwa].push(kwota || null);
 
-                        if (kwota && kwota < lowestPrice) {
-                            lowestPrice = kwota;
-                            lowestRoomName = p.nazwa;
-                        }
-                    });
+                            if (kwota && kwota < lowestPrice) {
+                                lowestPrice = kwota;
+                                lowestRoomName = p.nazwa;
+                            }
+                        });
+                    }
                 }
             });
 
-            addDebugLog(`Zebrano ${czasy.length} czasów i ${Object.keys(pokojeMap).length} pokoi`, 'success');
+            addDebugLog(`✓ Zebrano ${czasy.length} czasów i ${Object.keys(pokojeMap).length} pokoi`, 'success');
 
             document.getElementById('minPrice').textContent = lowestPrice !== Infinity ? lowestPrice.toFixed(2) + ' zł' : '-';
             document.getElementById('minRoom').textContent = lowestRoomName;
