@@ -237,15 +237,13 @@ def wygeneruj_strone_html():
 
 
 async def sprawdz_termin(page, check_in, check_out):
-    url = f"https://www.poznan-apartments.pl/pl/apartamenty?check-in={check_in}&check-out={check_out}"
+    # Właściwy adres URL z właściwą domeną
+    url = f"https://poznanapartments.com/pl/apartamenty?check-in={check_in}&check-out={check_out}"
     print(f"🔗 Otwieram stronę: {url}")
     
     try:
-        # domcontentloaded zapobiega timeoutom na GitHub Actions
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        
-        # Dajemy czas silnikowi rezerwacji na załadowanie cennika w JS
-        await asyncio.sleep(8)
+        await asyncio.sleep(6)
         
         try:
             cookie_btn = page.locator("button:has-text('Akceptuj'), button:has-text('Zgadzam się'), .cookie-btn, #accept-cookies")
@@ -260,7 +258,7 @@ async def sprawdz_termin(page, check_in, check_out):
 
         pokoje_dane = await page.evaluate('''() => {
             const wyniki = [];
-            const elms = document.querySelectorAll('div, section, article');
+            const elms = document.querySelectorAll('div, section, article, li');
             
             elms.forEach(el => {
                 const text = el.innerText || '';
