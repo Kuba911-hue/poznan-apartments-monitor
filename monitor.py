@@ -1,3 +1,71 @@
+import os
+import json
+import asyncio
+import requests
+from datetime import datetime, timedelta
+from playwright.async_api import async_playwright
+
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
+HISTORY_FILE = "historia.json"
+
+def wygeneruj_najblizsze_weekendy(ile_weekendow=4):
+    dzis = datetime.now()
+    weekendy = []
+    dni_do_soboty = (5 - dzis.weekday()) % 7
+    if dni_do_soboty == 0:
+        dni_do_soboty = 7
+    pierwsza_sobota = dzis + timedelta(days=dni_do_soboty)
+    
+    for i in range(ile_weekendow):
+        sobota = pierwsza_sobota + timedelta(weeks=i)
+        niedziela = sobota + timedelta(days=1)
+        weekendy.append((sobota.strftime("%Y-%m-%d"), niedziela.strftime("%Y-%m-%d")))
+    return weekendy
+
+def wyslij_wiadomosc_telegram(tekst):
+    if not TELEGRAM_TOKEN or not CHAT_ID:
+        print("❌ Brak TELEGRAM_TOKEN lub CHAT_ID w secrets!")
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    try:
+        requests.post(url, json={"chat_id": CHAT_ID, "text": tekst, "parse_mode": "HTML"}, timeout=15)
+    except Exception as e:
+        print(f"❌ Błąd wysyłania wiadomości: {e}")
+
+def wyslij_zdjecie_telegram(sciezka_pliku, podpis):
+    if not TELEGRAM_TOKEN or not CHAT_ID:
+        print("❌ Brak TELEGRAM_TOKEN lub CHAT_ID w secrets!")
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+    try:
+        with open(sciezka_pliku, "rb") as photo:
+            res = requests.post(
+                url, 
+                data={"chat_id": CHAT_ID, "caption": podpis, "parse_mode": "HTML"}, 
+                files={"photo": photo},
+                timeout=30
+            )
+            if res.status_code != 200:
+                print(f"❌ Telegram API Error: {res.status_code} - {res.text}")
+    except Exception as e:
+        print(f"❌ Błąd podczas wysyłania zdjęcia: {e}")
+
+def zapisz_historie(odczytane_dane):
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    historia = []
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                historia = json.load(f)
+        except Exception:
+            historia = []
+
+    historia.append({"timestamp": now_str, "dane": odczytane_dane})
+
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(historia, f, ensure_ascii=False, indent=2)
+
 def wygeneruj_strone_html():
     historia_json_str = "[]"
     if os.path.exists(HISTORY_FILE):
@@ -73,7 +141,7 @@ def wygeneruj_strone_html():
 
         <div id="noData" class="empty-state" style="display: none;">
             <h3>⚠️ Brak danych w historii</h3>
-            <p>Bot jeszcze nie zgromadził udanych odczytów cen. Po pierwszym poprawnym uruchomieniu dane pojawią się automatycznie.</p>
+            <p>Bot gromadzi odczyty. Dane pojawią się automatycznie po wykryciu wolnych pokoi.</p>
         </div>
     </div>
 
@@ -82,9 +150,7 @@ def wygeneruj_strone_html():
         let myChart = null;
 
         function inicjalizuj() {
-            // Sprawdzenie czy historia zawiera jakiekolwiek poprawne wpisy z danymi
             const maDane = historiaData && historiaData.some(entry => entry.dane && entry.dane.some(d => d.pokoje && d.pokoje.length > 0));
-            
             if (!maDane) {
                 document.getElementById('content').style.display = 'none';
                 document.getElementById('noData').style.display = 'block';
@@ -95,9 +161,7 @@ def wygeneruj_strone_html():
             historiaData.forEach(entry => {
                 if (entry.dane) {
                     entry.dane.forEach(item => {
-                        if (item.pokoje && item.pokoje.length > 0) {
-                            terminySet.add(item.termin);
-                        }
+                        if (item.pokoje && item.pokoje.length > 0) terminySet.add(item.termin);
                     });
                 }
             });
@@ -188,3 +252,81 @@ def wygeneruj_strone_html():
     html_final = html_template.replace("__HISTORIA_JSON__", historia_json_str)
     with open("index.html", "w", encoding="utf-8") as f:
         f.write(html_final)
+
+async def sprawdz_termin(page, check_in, check_out):
+    print(f"Sprawdzanie terminu: {check_in} do {check_out}...")
+    target_url = f"https://booking.profitroom.com/pl/poznanapartments/pricelist/rooms/?check-in={check_in}&check-out={check_out}&currency=PLN&r1_adults=2"
+    wynik_terminu = {"termin": f"{check_in} - {check_out}", "pokoje": []}
+
+    try:
+        await page.goto(target_url, wait_until="networkidle", timeout=60000)
+        await asyncio.sleep(3)
+
+        try:
+            await page.click("text=Zaakceptuj wszystko", timeout=3000)
+            await asyncio.sleep(1)
+        except Exception:
+            pass
+
+        foto_path = f"cennik_{check_in}.png"
+        await page.screenshot(path=foto_path, full_page=True)
+
+        pokoje_dane = await page.evaluate('''() => {
+            const wyniki = [];
+            const textNodes = document.body.innerText.split('\\n').map(t => t.trim()).filter(Boolean);
+            
+            for (let i = 0; i < textNodes.length; i++) {
+                const line = textNodes[i];
+                if ((line.includes('Apartament') || line.includes('Studio')) && line.length < 80) {
+                    for (let j = i; j < Math.min(i + 15, textNodes.length); j++) {
+                        if (textNodes[j].includes('zł') && /\\d/.test(textNodes[j])) {
+                            wyniki.push({ nazwa: line, cena: textNodes[j] });
+                            break;
+                        }
+                    }
+                }
+            }
+            return wyniki;
+        }''')
+
+        if pokoje_dane:
+            wynik_terminu["pokoje"] = pokoje_dane
+            msg = f"<b>📊 Ceny Poznań Apartments ({check_in} - {check_out}):</b>\n\n"
+            for p in pokoje_dane:
+                msg += f"• <b>{p['nazwa']}</b>: 🟢 <b>{p['cena']}</b>\n"
+            wyslij_zdjecie_telegram(foto_path, msg)
+        else:
+            wyslij_wiadomosc_telegram(f"⚠️ Nie udało się odczytać cen dla terminu {check_in} - {check_out} (brak wolnych pokoi lub zmiana układu strony).")
+
+        if os.path.exists(foto_path):
+            os.remove(foto_path)
+
+    except Exception as e:
+        print(f"Błąd dla {check_in}: {e}")
+
+    return wynik_terminu
+
+async def pobierz_i_wyslij():
+    wszystkie_dane = []
+    terminy = wygeneruj_najblizsze_weekendy(4)
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(
+            viewport={'width': 1280, 'height': 900},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+        )
+        page = await context.new_page()
+
+        for check_in, check_out in terminy:
+            dane_t = await sprawdz_termin(page, check_in, check_out)
+            wszystkie_dane.append(dane_t)
+            await asyncio.sleep(2)
+
+        await browser.close()
+
+    zapisz_historie(wszystkie_dane)
+    wygeneruj_strone_html()
+
+if __name__ == "__main__":
+    asyncio.run(pobierz_i_wyslij())
