@@ -7,7 +7,7 @@ def wygeneruj_strone_html():
         except Exception as e:
             print(f"Błąd odczytu pliku historii: {e}")
 
-    html_content = f"""<!DOCTYPE html>
+    html_template = """<!DOCTYPE html>
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
@@ -16,19 +16,20 @@ def wygeneruj_strone_html():
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        :root {{ --bg: #f8fafc; --card-bg: #ffffff; --text-main: #0f172a; --text-muted: #64748b; --primary: #2563eb; --border: #e2e8f0; }}
-        body {{ font-family: 'Inter', sans-serif; margin: 0; padding: 24px; background: var(--bg); color: var(--text-main); }}
-        .container {{ max-width: 1100px; margin: 0 auto; }}
-        header {{ margin-bottom: 24px; text-align: center; }}
-        h1 {{ font-size: 26px; font-weight: 700; margin: 0 0 6px 0; }}
-        .control-panel {{ background: var(--card-bg); padding: 18px 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }}
-        select {{ padding: 10px 14px; font-size: 15px; border-radius: 8px; border: 1px solid var(--border); background: #fff; cursor: pointer; }}
-        .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }}
-        .stat-card {{ background: var(--card-bg); padding: 18px 20px; border-radius: 12px; border: 1px solid var(--border); }}
-        .stat-title {{ font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }}
-        .stat-value {{ font-size: 22px; font-weight: 700; color: var(--primary); }}
-        .main-card {{ background: var(--card-bg); padding: 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; }}
-        .chart-box {{ position: relative; height: 420px; width: 100%; }}
+        :root { --bg: #f8fafc; --card-bg: #ffffff; --text-main: #0f172a; --text-muted: #64748b; --primary: #2563eb; --border: #e2e8f0; }
+        body { font-family: 'Inter', sans-serif; margin: 0; padding: 24px; background: var(--bg); color: var(--text-main); }
+        .container { max-width: 1100px; margin: 0 auto; }
+        header { margin-bottom: 24px; text-align: center; }
+        h1 { font-size: 26px; font-weight: 700; margin: 0 0 6px 0; }
+        .control-panel { background: var(--card-bg); padding: 18px 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+        select { padding: 10px 14px; font-size: 15px; border-radius: 8px; border: 1px solid var(--border); background: #fff; cursor: pointer; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: var(--card-bg); padding: 18px 20px; border-radius: 12px; border: 1px solid var(--border); }
+        .stat-title { font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+        .stat-value { font-size: 22px; font-weight: 700; color: var(--primary); }
+        .main-card { background: var(--card-bg); padding: 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; }
+        .chart-box { position: relative; height: 420px; width: 100%; }
+        .empty-state { padding: 40px; text-align: center; color: var(--text-muted); background: #fff; border-radius: 12px; border: 1px solid var(--border); margin-top: 20px; }
     </style>
 </head>
 <body>
@@ -38,102 +39,120 @@ def wygeneruj_strone_html():
             <p style="color: var(--text-muted); margin:0;">Automatyczne śledzenie stawek</p>
         </header>
 
-        <div class="control-panel">
-            <div>
-                <label for="terminSelect" style="font-weight:600; margin-right:8px;">Wybierz termin:</label>
-                <select id="terminSelect" onchange="aktualizujStrone()"></select>
+        <div id="content">
+            <div class="control-panel">
+                <div>
+                    <label for="terminSelect" style="font-weight:600; margin-right:8px;">Wybierz termin:</label>
+                    <select id="terminSelect" onchange="aktualizujStrone()"></select>
+                </div>
+                <div id="lastUpdate" style="font-size: 13px; color: var(--text-muted);"></div>
             </div>
-            <div id="lastUpdate" style="font-size: 13px; color: var(--text-muted);"></div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-title">Najniższa cena</div>
+                    <div class="stat-value" id="minPrice">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-title">Najtańszy apartament</div>
+                    <div class="stat-value" id="minRoom" style="font-size: 15px; color: var(--text-main); font-weight: 600;">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-title">Liczba odczytów</div>
+                    <div class="stat-value" id="totalChecks" style="color: var(--text-main);">-</div>
+                </div>
+            </div>
+
+            <div class="main-card">
+                <div style="font-size: 16px; font-weight: 600; margin-bottom: 20px;">📈 Wykres zmian cen</div>
+                <div class="chart-box">
+                    <canvas id="priceChart"></canvas>
+                </div>
+            </div>
         </div>
 
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-title">Najniższa cena</div>
-                <div class="stat-value" id="minPrice">-</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-title">Najtańszy apartament</div>
-                <div class="stat-value" id="minRoom" style="font-size: 15px; color: var(--text-main); font-weight: 600;">-</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-title">Liczba odczytów</div>
-                <div class="stat-value" id="totalChecks" style="color: var(--text-main);">-</div>
-            </div>
-        </div>
-
-        <div class="main-card">
-            <div style="font-size: 16px; font-weight: 600; margin-bottom: 20px;">📈 Wykres zmian cen</div>
-            <div class="chart-box">
-                <canvas id="priceChart"></canvas>
-            </div>
+        <div id="noData" class="empty-state" style="display: none;">
+            <h3>⚠️ Brak danych w historii</h3>
+            <p>Bot jeszcze nie zgromadził udanych odczytów cen. Po pierwszym poprawnym uruchomieniu dane pojawią się automatycznie.</p>
         </div>
     </div>
 
     <script>
-        const historiaData = {historia_json_str};
+        const historiaData = __HISTORIA_JSON__;
         let myChart = null;
 
-        function inicjalizuj() {{
-            if (!historiaData || historiaData.length === 0) return;
+        function inicjalizuj() {
+            // Sprawdzenie czy historia zawiera jakiekolwiek poprawne wpisy z danymi
+            const maDane = historiaData && historiaData.some(entry => entry.dane && entry.dane.some(d => d.pokoje && d.pokoje.length > 0));
+            
+            if (!maDane) {
+                document.getElementById('content').style.display = 'none';
+                document.getElementById('noData').style.display = 'block';
+                return;
+            }
 
             const terminySet = new Set();
-            historiaData.forEach(entry => {{
-                if (entry.dane) {{
-                    entry.dane.forEach(item => terminySet.add(item.termin));
-                }}
-            }});
+            historiaData.forEach(entry => {
+                if (entry.dane) {
+                    entry.dane.forEach(item => {
+                        if (item.pokoje && item.pokoje.length > 0) {
+                            terminySet.add(item.termin);
+                        }
+                    });
+                }
+            });
 
             const select = document.getElementById('terminSelect');
             select.innerHTML = '';
-            terminySet.forEach(t => {{
+            terminySet.forEach(t => {
                 const opt = document.createElement('option');
                 opt.value = t;
                 opt.textContent = t;
                 select.appendChild(opt);
-            }});
+            });
 
-            if (historiaData.length > 0) {{
+            if (historiaData.length > 0) {
                 document.getElementById('lastUpdate').textContent = 'Ostatnia aktualizacja: ' + historiaData[historiaData.length - 1].timestamp;
-            }}
+            }
 
             aktualizujStrone();
-        }}
+        }
 
-        function aktualizujStrone() {{
+        function aktualizujStrone() {
             const select = document.getElementById('terminSelect');
             if (!select.value) return;
             
             const wybranyTermin = select.value;
             const czasy = [];
-            const pokojeMap = {{}};
+            const pokojeMap = {};
 
             let lowestPrice = Infinity;
             let lowestRoomName = "-";
 
-            historiaData.forEach(entry => {{
+            historiaData.forEach(entry => {
                 if (!entry.dane) return;
                 const daneTerminu = entry.dane.find(d => d.termin === wybranyTermin);
-                if (daneTerminu && daneTerminu.pokoje) {{
+                if (daneTerminu && daneTerminu.pokoje && daneTerminu.pokoje.length > 0) {
                     czasy.push(entry.timestamp);
-                    daneTerminu.pokoje.forEach(p => {{
+                    daneTerminu.pokoje.forEach(p => {
                         if (!pokojeMap[p.nazwa]) pokojeMap[p.nazwa] = [];
                         const kwota = parseFloat(p.cena.replace(/[^0-9,.]/g, '').replace(',', '.'));
                         pokojeMap[p.nazwa].push(kwota || null);
 
-                        if (kwota && kwota < lowestPrice) {{
+                        if (kwota && kwota < lowestPrice) {
                             lowestPrice = kwota;
                             lowestRoomName = p.nazwa;
-                        }}
-                    }});
-                }}
-            }});
+                        }
+                    });
+                }
+            });
 
             document.getElementById('minPrice').textContent = lowestPrice !== Infinity ? lowestPrice.toFixed(2) + ' zł' : '-';
             document.getElementById('minRoom').textContent = lowestRoomName;
             document.getElementById('totalChecks').textContent = czasy.length;
 
             const colors = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#4b5563'];
-            const datasets = Object.keys(pokojeMap).map((nazwa, idx) => ({{
+            const datasets = Object.keys(pokojeMap).map((nazwa, idx) => ({
                 label: nazwa,
                 data: pokojeMap[nazwa],
                 borderColor: colors[idx % colors.length],
@@ -142,28 +161,30 @@ def wygeneruj_strone_html():
                 pointRadius: 4,
                 fill: false,
                 tension: 0.15
-            }}));
+            }));
 
             if (myChart) myChart.destroy();
             const ctx = document.getElementById('priceChart').getContext('2d');
-            myChart = new Chart(ctx, {{
+            myChart = new Chart(ctx, {
                 type: 'line',
-                data: {{ labels: czasy, datasets: datasets }},
-                options: {{
+                data: { labels: czasy, datasets: datasets },
+                options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    interaction: {{ mode: 'index', intersect: false }},
-                    scales: {{
-                        y: {{ grid: {{ color: '#f1f5f9' }}, title: {{ display: true, text: 'Cena (PLN)' }} }},
-                        x: {{ grid: {{ display: false }}, title: {{ display: true, text: 'Data i godzina sprawdzania' }} }}
-                    }}
-                }}
-            }});
-        }}
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        y: { grid: { color: '#f1f5f9' }, title: { display: true, text: 'Cena (PLN)' } },
+                        x: { grid: { display: false }, title: { display: true, text: 'Data i godzina sprawdzania' } }
+                    }
+                }
+            });
+        }
 
         inicjalizuj();
     </script>
 </body>
 </html>"""
+
+    html_final = html_template.replace("__HISTORIA_JSON__", historia_json_str)
     with open("index.html", "w", encoding="utf-8") as f:
-        f.write(html_content)
+        f.write(html_final)
