@@ -1566,5 +1566,150 @@
         ]
       }
     ]
+  },
+  {
+    "timestamp": "2026-08-24 16:52",
+    "dane": [
+      {
+        "termin": "2026-08-29 - 2026-08-30",
+        "pokoje": [
+          {
+            "nazwa": "Apartament z 1 sypialnią standard",
+            "cena": "od 730 zł"
+          },
+          {
+            "nazwa": "Apartament z 1 sypialnią comfort",
+            "cena": "od 730 zł"
+          },
+          {
+            "nazwa": "Apartament Delux z 1 sypialnią",
+            "cena": "od 780 zł"
+          },
+          {
+            "nazwa": "Apartament widokowy z 1 sypialnią",
+            "cena": "od 830 zł"
+          }
+        ]
+      },
+      {
+        "termin": "2026-09-05 - 2026-09-06",
+        "pokoje": [
+          {
+            "nazwa": "Apartament studio standard",
+            "cena": "od 600 zł"
+          },
+          {
+            "nazwa": "Apartament studio comfort",
+            "cena": "od 630 zł"
+          },
+          {
+            "nazwa": "Apartament studio family",
+            "cena": "od 660 zł"
+          },
+          {
+            "nazwa": "Apartament z 1 sypialnią standard",
+            "cena": "od 740 zł"
+          },
+          {
+            "nazwa": "Apartament z 1 sypialnią comfort",
+            "cena": "od 790 zł"
+          },
+          {
+            "nazwa": "Apartament Delux z 1 sypialnią",
+            "cena": "od 840 zł"
+          },
+          {
+            "nazwa": "Apartament widokowy z 1 sypialnią",
+            "cena": "od 880 zł"
+          },
+          {
+            "nazwa": "Apartament z 2 sypialniami",
+            "cena": "od 950 zł"
+          },
+          {
+            "nazwa": "Apartament z 2 sypialniami i 2 pojedynczymi łóżkami w jednej z sypialni",
+            "cena": "od 950 zł"
+          }
+        ]
+      },
+      {
+        "termin": "2026-09-12 - 2026-09-13",
+        "pokoje": [
+          {
+            "nazwa": "Apartament studio standard",
+            "cena": "od 400 zł"
+          },
+          {
+            "nazwa": "Apartament studio comfort",
+            "cena": "od 440 zł"
+          },
+          {
+            "nazwa": "Apartament studio family",
+            "cena": "od 490 zł"
+          },
+          {
+            "nazwa": "Apartament z 1 sypialnią standard",
+            "cena": "od 530 zł"
+          },
+          {
+            "nazwa": "Apartament z 1 sypialnią comfort",
+            "cena": "od 560 zł"
+          },
+          {
+            "nazwa": "Apartament Delux z 1 sypialnią",
+            "cena": "od 610 zł"
+          },
+          {
+            "nazwa": "Apartament widokowy z 1 sypialnią",
+            "cena": "od 680 zł"
+          },
+          {
+            "nazwa": "Apartament z 2 sypialniami",
+            "cena": "od 780 zł"
+          },
+          {
+            "nazwa": "Apartament z 2 sypialniami i 2 pojedynczymi łóżkami w jednej z sypialni",
+            "cena": "od 780 zł"
+          }
+        ]
+      },
+      {
+        "termin": "2026-09-19 - 2026-09-20",
+        "pokoje": [
+          {
+            "nazwa": "Apartament studio comfort",
+            "cena": "od 440 zł"
+          },
+          {
+            "nazwa": "Apartament studio family",
+            "cena": "od 490 zł"
+          },
+          {
+            "nazwa": "Apartament z 1 sypialnią standard",
+            "cena": "od 530 zł"
+          },
+          {
+            "nazwa": "Apartament z 1 sypialnią comfort",
+            "cena": "od 560 zł"
+          },
+          {
+            "nazwa": "Apartament Delux z 1 sypialnią",
+            "cena": "od 610 zł"
+          },
+          {
+            "nazwa": "Apartament widokowy z 1 sypialnią",
+            "cena": "od 680 zł"
+          },
+          {
+            "nazwa": "Apartament z 2 sypialniami",
+            "cena": "od 780 zł"
+          },
+          {
+            "nazwa": "Apartament widokowy z 2 sypialniami",
+            "cena": "od 930 zł"
+          }
+        ]
+      }
+    ]
   }
 ]
