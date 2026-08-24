@@ -35,14 +35,12 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-          TZ: Europe/Warsaw
         run: python monitor.py
 
       - name: Zapis historii i strony do GitHuba
         run: |
           git config --global user.name "GitHub Action Bot"
           git config --global user.email "actions@github.com"
-          git pull origin main --rebase || true
           git add historia.json index.html
           git commit -m "Aktualizacja historii cen" || exit 0
           git push
