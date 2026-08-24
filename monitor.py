@@ -60,8 +60,7 @@ def wygeneruj_strone_html():
     if os.path.exists(HISTORY_FILE):
         try:
             with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-                dane = json.load(f)
-                historia_json_str = json.dumps(dane, ensure_ascii=False)
+                historia_json_str = f.read()
         except Exception as e:
             print(f"Błąd odczytu pliku historii: {e}")
 
@@ -236,7 +235,7 @@ async def sprawdz_termin(page, check_in, check_out):
 
     try:
         await page.goto(target_url, wait_until="networkidle", timeout=60000)
-        await asyncio.sleep(4)
+        await asyncio.sleep(3)
 
         try:
             await page.click("text=Zaakceptuj wszystko", timeout=3000)
@@ -247,27 +246,21 @@ async def sprawdz_termin(page, check_in, check_out):
         foto_path = f"cennik_{check_in}.png"
         await page.screenshot(path=foto_path, full_page=True)
 
-        # Pobieramy precyzyjnie parę: nazwa apartamentu -> OSTATNIA widoczna cena przy danym typie (cena właściwa)
         pokoje_dane = await page.evaluate('''() => {
             const wyniki = [];
             const textNodes = document.body.innerText.split('\\n').map(t => t.trim()).filter(Boolean);
             
             for (let i = 0; i < textNodes.length; i++) {
                 const line = textNodes[i];
-                if (line.startsWith('Apartament') && line.length < 60) {
-                    let znalezionaCena = null;
-                    // Przeszukujemy blok tekstu pod nazwą apartamentu
-                    for (let j = i + 1; j < Math.min(i + 12, textNodes.length); j++) {
-                        if (textNodes[j].includes('zł') && /\\d/.test(textNodes[j])) {
-                            znalezionaCena = textNodes[j];
+                if (line.includes('Apartament') && line.length < 50) {
+                    for (let j = i; j < Math.min(i + 10, textNodes.length); j++) {
+                        if (textNodes[j].includes('zł')) {
+                            wyniki.push({
+                                nazwa: line,
+                                cena: textNodes[j]
+                            });
+                            break;
                         }
-                        if (textNodes[j].startsWith('Apartament')) break;
-                    }
-                    if (znalezionaCena) {
-                        wyniki.push({
-                            nazwa: line,
-                            cena: znalezionaCena
-                        });
                     }
                 }
             }
