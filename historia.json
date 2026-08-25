@@ -610,5 +610,41 @@
         ]
       }
     ]
+  },
+  {
+    "timestamp": "2026-08-25 11:36",
+    "dane": [
+      {
+        "termin": "2026-08-29 - 2026-08-30",
+        "pokoje": []
+      },
+      {
+        "termin": "2026-09-05 - 2026-09-06",
+        "pokoje": [
+          {
+            "nazwa": "Apartament z 1 sypialnią comfort",
+            "cena": "od 670 zł"
+          }
+        ]
+      },
+      {
+        "termin": "2026-09-12 - 2026-09-13",
+        "pokoje": [
+          {
+            "nazwa": "Apartament z 1 sypialnią comfort",
+            "cena": "od 560 zł"
+          }
+        ]
+      },
+      {
+        "termin": "2026-09-19 - 2026-09-20",
+        "pokoje": [
+          {
+            "nazwa": "Apartament z 1 sypialnią comfort",
+            "cena": "od 670 zł"
+          }
+        ]
+      }
+    ]
   }
 ]
