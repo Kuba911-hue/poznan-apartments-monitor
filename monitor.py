@@ -78,10 +78,10 @@ def wygeneruj_strone_html():
         .btn-outline:hover { background: var(--border); }
         .actions { display: flex; gap: 10px; flex-wrap: wrap; }
         
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
         .stat-card { background: var(--card-bg); padding: 18px 20px; border-radius: 12px; border: 1px solid var(--border); position: relative;}
         .stat-title { font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
-        .stat-value { font-size: 22px; font-weight: 700; color: var(--primary); }
+        .stat-value { font-size: 20px; font-weight: 700; color: var(--primary); }
         .trend-badge { font-size: 12px; padding: 2px 6px; border-radius: 4px; font-weight: 600; position: absolute; top: 18px; right: 20px; }
         
         .main-card { background: var(--card-bg); padding: 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; }
@@ -140,6 +140,11 @@ def wygeneruj_strone_html():
             <div class="stat-card">
                 <div class="stat-title">Najtańszy apartament</div>
                 <div class="stat-value" id="minRoom" style="font-size: 14px; color: var(--text-main); font-weight: 600;">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Prognoza pogody</div>
+                <div class="stat-value" id="weatherInfo" style="font-size: 15px; color: var(--text-main); font-weight: 600;">Ładowanie...</div>
+                <div id="weatherSub" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Poznań</div>
             </div>
             <div class="stat-card">
                 <div class="stat-title">Aktualizacja</div>
@@ -209,6 +214,47 @@ def wygeneruj_strone_html():
             } catch (e) { console.error("Błąd ładowania", e); }
         }
 
+        async function pobierzPogode(terminStr) {
+            const weatherEl = document.getElementById('weatherInfo');
+            const weatherSub = document.getElementById('weatherSub');
+            
+            if (!terminStr) return;
+            const dates = terminStr.split(' - ');
+            if (dates.length !== 2) return;
+
+            const startDate = dates[0].trim();
+            const endDate = dates[1].trim();
+
+            const lat = 52.4064;
+            const lon = 16.9252;
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weathercode,temperature_2m_max,precipitation_sum&timezone=Europe%2FWarsaw&start_date=${startDate}&end_date=${endDate}`;
+
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error();
+                const data = await res.json();
+                
+                if (data.daily && data.daily.temperature_2m_max) {
+                    const maxTemp = Math.max(...data.daily.temperature_2m_max);
+                    const totalRain = data.daily.precipitation_sum.reduce((a, b) => a + b, 0);
+                    const code = data.daily.weathercode[0];
+                    
+                    const weatherMap = {
+                        0: '☀️ Słonecznie', 1: '🌤 Przejaśnienia', 2: '⛅ Zachmurzenie', 3: '☁️ Pochmurno',
+                        45: '🌫 Mgła', 48: '🌫 Szadź', 51: '🌧 Mżawka', 61: '🌧 Deszcz', 63: '🌧 Ulewa',
+                        71: '❄️ Śnieg', 80: '🌦 Przelotny deszcz', 95: '⛈ Burza'
+                    };
+                    const opis = weatherMap[code] || '🌡 Pogoda';
+
+                    weatherEl.innerHTML = `${opis} (${maxTemp.toFixed(0)}°C)`;
+                    weatherSub.textContent = `Opad: ${totalRain.toFixed(1)} mm`;
+                }
+            } catch (e) {
+                weatherEl.textContent = "Brak prognozy";
+                weatherSub.textContent = "Dostępna ~16 dni przed";
+            }
+        }
+
         function obliczAllTimeLow(nazwa, wybranyTermin) {
             let minVal = Infinity;
             historiaData.forEach(entry => {
@@ -233,7 +279,6 @@ def wygeneruj_strone_html():
             const pokojeMap = {};
             currentRoomsData = [];
 
-            // Zbieranie historii dla wykresu
             historiaData.forEach(entry => {
                 if (!entry.dane) return;
                 const daneTerminu = entry.dane.find(d => d.termin === wybranyTermin);
@@ -247,7 +292,6 @@ def wygeneruj_strone_html():
                 }
             });
 
-            // Budowanie struktury danych do tabeli/kafelków
             let lowestPrice = Infinity;
             let lowestRoomName = "-";
             let sumCurr = 0, countCurr = 0;
@@ -269,7 +313,6 @@ def wygeneruj_strone_html():
                 currentRoomsData.push({ nazwa, lastPrice: last, prevPrice: prev, diff, minAllTime: minLow });
             });
 
-            // Aktualizacja kafelków statystyk
             const avgCurr = countCurr > 0 ? sumCurr / countCurr : 0;
             const avgPrev = countPrev > 0 ? sumPrev / countPrev : 0;
             
@@ -277,7 +320,6 @@ def wygeneruj_strone_html():
             document.getElementById('avgPrice').textContent = avgCurr > 0 ? avgCurr.toFixed(2) + ' zł' : '-';
             document.getElementById('minRoom').textContent = lowestRoomName;
 
-            // Trend
             const trendEl = document.getElementById('avgTrend');
             if (avgPrev > 0 && avgCurr !== avgPrev) {
                 const trendDiff = avgCurr - avgPrev;
@@ -289,7 +331,6 @@ def wygeneruj_strone_html():
                 trendEl.classList.add('hidden');
             }
 
-            // Rysowanie wykresu
             const colors = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#4b5563', '#be185d', '#ea580c'];
             const datasets = Object.keys(pokojeMap).map((nazwa, idx) => ({
                 label: nazwa,
@@ -316,10 +357,10 @@ def wygeneruj_strone_html():
             chartLinesVisible = true;
 
             renderList();
+            pobierzPogode(wybranyTermin);
         }
 
         function renderList() {
-            // Sortowanie
             currentRoomsData.sort((a, b) => {
                 let valA = a[currentSort.col]; let valB = b[currentSort.col];
                 if (valA === null) valA = currentSort.asc ? Infinity : -Infinity;
@@ -342,7 +383,6 @@ def wygeneruj_strone_html():
                 
                 const isCheapest = r.lastPrice === minPriceVal ? 'cheapest-row' : '';
 
-                // Wiersz tabeli
                 const tr = document.createElement('tr');
                 tr.className = `row-hover ${isCheapest}`;
                 tr.onclick = () => highlightOnChart(r.nazwa);
@@ -355,7 +395,6 @@ def wygeneruj_strone_html():
                 `;
                 tbody.appendChild(tr);
 
-                // Kafelek siatki
                 const card = document.createElement('div');
                 card.className = `grid-card ${isCheapest}`;
                 card.onclick = () => highlightOnChart(r.nazwa);
@@ -435,7 +474,6 @@ async def sprawdz_termin(page, check_in, check_out):
         await page.goto(target_url, wait_until="domcontentloaded", timeout=60000)
         await asyncio.sleep(4)
 
-        # Usunięcie banera RODO
         try:
             await page.click("text=Zaakceptuj wszystko", timeout=3000)
             await asyncio.sleep(1)
@@ -447,7 +485,6 @@ async def sprawdz_termin(page, check_in, check_out):
             overlays.forEach(el => el.remove());
         }''')
 
-        # Scrollowanie dla załadowania elementów i obrazów
         await page.evaluate('''async () => {
             await new Promise((resolve) => {
                 let totalHeight = 0;
@@ -466,11 +503,9 @@ async def sprawdz_termin(page, check_in, check_out):
         }''')
         await asyncio.sleep(2)
 
-        # Robienie zrzutu ekranu dla bota
         foto_path = f"cennik_{check_in}.png"
         await page.screenshot(path=foto_path, full_page=True)
 
-        # Pobieranie struktur cen z kodu strony
         pokoje_dane = await page.evaluate('''() => {
             const wyniki = [];
             const cards = Array.from(document.querySelectorAll('div')).filter(el => 
@@ -506,10 +541,8 @@ async def sprawdz_termin(page, check_in, check_out):
             for p in pokoje_dane:
                 msg += f"• <b>{p['nazwa']}</b>: 🟢 <b>{p['cena']}</b>\n"
             
-            # Wysyłka zdjęcia WRAZ z tekstem na Telegram
             wyslij_zdjecie_telegram(foto_path, msg)
 
-        # Usunięcie pliku lokalnego po wysłaniu
         if os.path.exists(foto_path):
             os.remove(foto_path)
 
