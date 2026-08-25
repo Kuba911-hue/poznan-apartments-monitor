@@ -58,38 +58,62 @@ def wygeneruj_strone_html():
         :root { 
             --bg: #f8fafc; --card-bg: #ffffff; --text-main: #0f172a; 
             --text-muted: #64748b; --primary: #2563eb; --border: #e2e8f0; 
-            --success: #16a34a; --danger: #dc2626;
+            --success: #16a34a; --success-bg: #dcfce7; --danger: #dc2626; --danger-bg: #fee2e2;
         }
         @media (prefers-color-scheme: dark) {
             :root {
                 --bg: #0f172a; --card-bg: #1e293b; --text-main: #f8fafc;
                 --text-muted: #94a3b8; --primary: #3b82f6; --border: #334155;
+                --success-bg: rgba(22, 163, 74, 0.2); --danger-bg: rgba(220, 38, 38, 0.2);
             }
         }
         body { font-family: 'Inter', sans-serif; margin: 0; padding: 24px; background: var(--bg); color: var(--text-main); }
-        .container { max-width: 1100px; margin: 0 auto; }
+        .container { max-width: 1200px; margin: 0 auto; }
         header { margin-bottom: 24px; text-align: center; }
         h1 { font-size: 26px; font-weight: 700; margin: 0 0 6px 0; }
         .control-panel { background: var(--card-bg); padding: 18px 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
         select { padding: 10px 14px; font-size: 15px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-bg); color: var(--text-main); cursor: pointer; }
+        .btn { padding: 10px 16px; font-size: 14px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; transition: all 0.2s; background: var(--primary); color: white; display: inline-flex; align-items: center; gap: 6px; }
+        .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-main); }
+        .btn-outline:hover { background: var(--border); }
+        .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+        
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
-        .stat-card { background: var(--card-bg); padding: 18px 20px; border-radius: 12px; border: 1px solid var(--border); }
+        .stat-card { background: var(--card-bg); padding: 18px 20px; border-radius: 12px; border: 1px solid var(--border); position: relative;}
         .stat-title { font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
         .stat-value { font-size: 22px; font-weight: 700; color: var(--primary); }
+        .trend-badge { font-size: 12px; padding: 2px 6px; border-radius: 4px; font-weight: 600; position: absolute; top: 18px; right: 20px; }
+        
         .main-card { background: var(--card-bg); padding: 24px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; }
         .chart-box { position: relative; height: 400px; width: 100%; }
+        
+        /* Tabela */
         table { width: 100%; border-collapse: collapse; margin-top: 12px; }
         th, td { text-align: left; padding: 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
-        th { color: var(--text-muted); font-weight: 600; }
+        th { color: var(--text-muted); font-weight: 600; cursor: pointer; user-select: none; }
+        th:hover { background: rgba(0,0,0,0.02); }
+        .cheapest-row { background: var(--success-bg); }
+        .row-hover { cursor: pointer; transition: background 0.1s; }
+        .row-hover:hover { background: rgba(0,0,0,0.03); }
+        
+        /* Siatka (Grid View) */
+        .grid-view { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 16px; }
+        .grid-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; transition: transform 0.2s; cursor: pointer; }
+        .grid-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .grid-card.cheapest-row { border-color: var(--success); border-width: 2px; }
+        .grid-card h3 { margin: 0 0 12px 0; font-size: 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px;}
+        .grid-detail { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 14px; }
+        
         .badge-down { color: var(--success); font-weight: 600; }
         .badge-up { color: var(--danger); font-weight: 600; }
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>📊 Monitor Ceny Poznań Apartments</h1>
-            <p style="color: var(--text-muted); margin:0;">Automatyczne śledzenie stawek w terminach weekendowych</p>
+            <p style="color: var(--text-muted); margin:0;">Zaawansowane śledzenie stawek weekendowych</p>
         </header>
 
         <div class="control-panel">
@@ -97,7 +121,10 @@ def wygeneruj_strone_html():
                 <label for="terminSelect" style="font-weight:600; margin-right:8px;">Wybierz termin:</label>
                 <select id="terminSelect" onchange="aktualizujStrone()"></select>
             </div>
-            <div id="lastUpdate" style="font-size: 13px; color: var(--text-muted);"></div>
+            <div class="actions">
+                <button class="btn btn-outline" onclick="toggleView()" id="viewBtn">📱 Widok Siatki</button>
+                <button class="btn" onclick="exportCSV()">📥 Pobierz CSV</button>
+            </div>
         </div>
 
         <div class="stats-grid">
@@ -106,80 +133,96 @@ def wygeneruj_strone_html():
                 <div class="stat-value" id="minPrice">-</div>
             </div>
             <div class="stat-card">
-                <div class="stat-title">Średnia cena</div>
+                <div class="stat-title">Średnia cena (trend)</div>
                 <div class="stat-value" id="avgPrice" style="color: var(--text-main);">-</div>
+                <div id="avgTrend" class="trend-badge hidden"></div>
             </div>
             <div class="stat-card">
                 <div class="stat-title">Najtańszy apartament</div>
                 <div class="stat-value" id="minRoom" style="font-size: 14px; color: var(--text-main); font-weight: 600;">-</div>
             </div>
             <div class="stat-card">
-                <div class="stat-title">Liczba odczytów</div>
-                <div class="stat-value" id="totalChecks" style="color: var(--text-main);">-</div>
+                <div class="stat-title">Aktualizacja</div>
+                <div class="stat-value" id="lastUpdate" style="font-size: 14px; color: var(--text-main);">Brak danych</div>
             </div>
         </div>
 
         <div class="main-card">
-            <div style="font-size: 16px; font-weight: 600; margin-bottom: 16px;">📈 Wykres zmian cen</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <div style="font-size: 16px; font-weight: 600;">📈 Wykres zmian cen</div>
+                <button class="btn btn-outline" style="padding: 6px 12px; font-size: 12px;" onclick="toggleAllChartLines()">Pokaż/Ukryj wszystko</button>
+            </div>
             <div class="chart-box">
                 <canvas id="priceChart"></canvas>
             </div>
         </div>
 
         <div class="main-card">
-            <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px;">📋 Ostatnie aktualne ceny</div>
-            <div style="overflow-x: auto;">
+            <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px;">📋 Aktualne ceny (kliknij nagłówek by sortować lub wiersz by pokazać na wykresie)</div>
+            
+            <div id="tableView" style="overflow-x: auto;">
                 <table id="priceTable">
                     <thead>
                         <tr>
-                            <th>Apartament</th>
-                            <th>Ostatnia cena</th>
-                            <th>Poprzednia cena</th>
-                            <th>Zmiana</th>
+                            <th onclick="sortTable('nazwa')">Apartament ↕</th>
+                            <th onclick="sortTable('lastPrice')">Ostatnia cena ↕</th>
+                            <th onclick="sortTable('prevPrice')">Poprzednia ↕</th>
+                            <th onclick="sortTable('diff')">Zmiana ↕</th>
+                            <th onclick="sortTable('minAllTime')">All-Time Low ↕</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
                 </table>
             </div>
+
+            <div id="gridView" class="grid-view hidden"></div>
         </div>
     </div>
 
     <script>
         let historiaData = [];
         let myChart = null;
+        let currentRoomsData = [];
+        let currentSort = { col: 'lastPrice', asc: true };
+        let isTableView = true;
+        let chartLinesVisible = true;
 
         async function wczytajDane() {
             try {
-                // Dodajemy cache buster by unikać problemów z odświeżaniem na stronach np. GitHub Pages
                 const res = await fetch('historia.json?t=' + new Date().getTime());
                 historiaData = await res.json();
                 
                 const terminySet = new Set();
                 historiaData.forEach(entry => {
-                    if (entry.dane) {
-                        entry.dane.forEach(item => {
-                            if (item.pokoje && item.pokoje.length > 0) terminySet.add(item.termin);
-                        });
-                    }
+                    if (entry.dane) entry.dane.forEach(item => { if (item.pokoje && item.pokoje.length > 0) terminySet.add(item.termin); });
                 });
 
                 const select = document.getElementById('terminSelect');
                 select.innerHTML = '';
-                terminySet.forEach(t => {
-                    const opt = document.createElement('option');
-                    opt.value = t;
-                    opt.textContent = t;
-                    select.appendChild(opt);
-                });
+                terminySet.forEach(t => { select.add(new Option(t, t)); });
 
                 if (historiaData.length > 0) {
-                    document.getElementById('lastUpdate').textContent = 'Ostatnia aktualizacja: ' + historiaData[historiaData.length - 1].timestamp;
+                    document.getElementById('lastUpdate').textContent = historiaData[historiaData.length - 1].timestamp;
                 }
 
                 aktualizujStrone();
-            } catch (e) {
-                console.error("Błąd ładowania danych", e);
-            }
+            } catch (e) { console.error("Błąd ładowania", e); }
+        }
+
+        function obliczAllTimeLow(nazwa, wybranyTermin) {
+            let minVal = Infinity;
+            historiaData.forEach(entry => {
+                if(!entry.dane) return;
+                const termin = entry.dane.find(d => d.termin === wybranyTermin);
+                if (termin && termin.pokoje) {
+                    const pok = termin.pokoje.find(p => p.nazwa === nazwa);
+                    if (pok) {
+                        const val = parseFloat(pok.cena.replace(/[^0-9,.]/g, '').replace(',', '.'));
+                        if (val < minVal) minVal = val;
+                    }
+                }
+            });
+            return minVal;
         }
 
         function aktualizujStrone() {
@@ -188,12 +231,9 @@ def wygeneruj_strone_html():
 
             const czasy = [];
             const pokojeMap = {};
+            currentRoomsData = [];
 
-            let lowestPrice = Infinity;
-            let lowestRoomName = "-";
-            let totalPriceSum = 0;
-            let priceCount = 0;
-
+            // Zbieranie historii dla wykresu
             historiaData.forEach(entry => {
                 if (!entry.dane) return;
                 const daneTerminu = entry.dane.find(d => d.termin === wybranyTermin);
@@ -203,26 +243,54 @@ def wygeneruj_strone_html():
                         if (!pokojeMap[p.nazwa]) pokojeMap[p.nazwa] = [];
                         const kwota = parseFloat(p.cena.replace(/[^0-9,.]/g, '').replace(',', '.'));
                         pokojeMap[p.nazwa].push(kwota || null);
-
-                        if (kwota) {
-                            totalPriceSum += kwota;
-                            priceCount++;
-                            if (kwota < lowestPrice) {
-                                lowestPrice = kwota;
-                                lowestRoomName = p.nazwa;
-                            }
-                        }
                     });
                 }
             });
 
-            document.getElementById('minPrice').textContent = lowestPrice !== Infinity ? lowestPrice.toFixed(2) + ' zł' : '-';
-            document.getElementById('avgPrice').textContent = priceCount > 0 ? (totalPriceSum / priceCount).toFixed(2) + ' zł' : '-';
-            document.getElementById('minRoom').textContent = lowestRoomName;
-            document.getElementById('totalChecks').textContent = czasy.length;
+            // Budowanie struktury danych do tabeli/kafelków
+            let lowestPrice = Infinity;
+            let lowestRoomName = "-";
+            let sumCurr = 0, countCurr = 0;
+            let sumPrev = 0, countPrev = 0;
 
-            // Wykres
-            const colors = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#4b5563'];
+            Object.keys(pokojeMap).forEach(nazwa => {
+                const arr = pokojeMap[nazwa].filter(v => v !== null);
+                if (arr.length === 0) return;
+                
+                const last = arr[arr.length - 1];
+                const prev = arr.length > 1 ? arr[arr.length - 2] : null;
+                const diff = prev !== null ? last - prev : 0;
+                const minLow = obliczAllTimeLow(nazwa, wybranyTermin);
+
+                if (last < lowestPrice) { lowestPrice = last; lowestRoomName = nazwa; }
+                sumCurr += last; countCurr++;
+                if (prev !== null) { sumPrev += prev; countPrev++; }
+
+                currentRoomsData.push({ nazwa, lastPrice: last, prevPrice: prev, diff, minAllTime: minLow });
+            });
+
+            // Aktualizacja kafelków statystyk
+            const avgCurr = countCurr > 0 ? sumCurr / countCurr : 0;
+            const avgPrev = countPrev > 0 ? sumPrev / countPrev : 0;
+            
+            document.getElementById('minPrice').textContent = lowestPrice !== Infinity ? lowestPrice.toFixed(2) + ' zł' : '-';
+            document.getElementById('avgPrice').textContent = avgCurr > 0 ? avgCurr.toFixed(2) + ' zł' : '-';
+            document.getElementById('minRoom').textContent = lowestRoomName;
+
+            // Trend
+            const trendEl = document.getElementById('avgTrend');
+            if (avgPrev > 0 && avgCurr !== avgPrev) {
+                const trendDiff = avgCurr - avgPrev;
+                trendEl.classList.remove('hidden');
+                trendEl.style.backgroundColor = trendDiff > 0 ? 'var(--danger-bg)' : 'var(--success-bg)';
+                trendEl.style.color = trendDiff > 0 ? 'var(--danger)' : 'var(--success)';
+                trendEl.textContent = trendDiff > 0 ? '↗ +' + trendDiff.toFixed(2) + ' zł' : '↘ ' + trendDiff.toFixed(2) + ' zł';
+            } else {
+                trendEl.classList.add('hidden');
+            }
+
+            // Rysowanie wykresu
+            const colors = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#4b5563', '#be185d', '#ea580c'];
             const datasets = Object.keys(pokojeMap).map((nazwa, idx) => ({
                 label: nazwa,
                 data: pokojeMap[nazwa],
@@ -235,55 +303,120 @@ def wygeneruj_strone_html():
             }));
 
             if (myChart) myChart.destroy();
-            const ctx = document.getElementById('priceChart').getContext('2d');
-            myChart = new Chart(ctx, {
+            myChart = new Chart(document.getElementById('priceChart').getContext('2d'), {
                 type: 'line',
                 data: { labels: czasy, datasets: datasets },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
+                    responsive: true, maintainAspectRatio: false,
                     interaction: { mode: 'index', intersect: false },
-                    plugins: { legend: { position: 'bottom' } },
-                    scales: {
-                        y: { grid: { color: 'rgba(226, 232, 240, 0.5)' }, title: { display: true, text: 'Cena (PLN)' } },
-                        x: { grid: { display: false } }
-                    }
+                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } },
+                    scales: { y: { grid: { color: 'rgba(226, 232, 240, 0.5)' } }, x: { grid: { display: false } } }
                 }
             });
+            chartLinesVisible = true;
 
-            // Tabela
+            renderList();
+        }
+
+        function renderList() {
+            // Sortowanie
+            currentRoomsData.sort((a, b) => {
+                let valA = a[currentSort.col]; let valB = b[currentSort.col];
+                if (valA === null) valA = currentSort.asc ? Infinity : -Infinity;
+                if (valB === null) valB = currentSort.asc ? Infinity : -Infinity;
+                if (valA < valB) return currentSort.asc ? -1 : 1;
+                if (valA > valB) return currentSort.asc ? 1 : -1;
+                return 0;
+            });
+
             const tbody = document.querySelector('#priceTable tbody');
-            tbody.innerHTML = '';
-            Object.keys(pokojeMap).forEach(nazwa => {
-                const arr = pokojeMap[nazwa].filter(v => v !== null);
-                if (arr.length === 0) return;
-                const last = arr[arr.length - 1];
-                const prev = arr.length > 1 ? arr[arr.length - 2] : null;
+            const grid = document.getElementById('gridView');
+            tbody.innerHTML = ''; grid.innerHTML = '';
+            
+            const minPriceVal = Math.min(...currentRoomsData.map(r => r.lastPrice));
 
-                let diffText = '-';
-                let diffClass = '';
-                if (prev !== null) {
-                    const diff = last - prev;
-                    if (diff > 0) {
-                        diffText = `+${diff.toFixed(2)} zł ⬆`;
-                        diffClass = 'badge-up';
-                    } else if (diff < 0) {
-                        diffText = `${diff.toFixed(2)} zł ⬇`;
-                        diffClass = 'badge-down';
-                    } else {
-                        diffText = 'Bez zmian';
-                    }
-                }
+            currentRoomsData.forEach(r => {
+                let diffText = 'Bez zmian'; let diffClass = '';
+                if (r.diff > 0) { diffText = `+${r.diff.toFixed(2)} zł ⬆`; diffClass = 'badge-up'; } 
+                else if (r.diff < 0) { diffText = `${r.diff.toFixed(2)} zł ⬇`; diffClass = 'badge-down'; }
+                
+                const isCheapest = r.lastPrice === minPriceVal ? 'cheapest-row' : '';
 
+                // Wiersz tabeli
                 const tr = document.createElement('tr');
+                tr.className = `row-hover ${isCheapest}`;
+                tr.onclick = () => highlightOnChart(r.nazwa);
                 tr.innerHTML = `
-                    <td><b>${nazwa}</b></td>
-                    <td>${last.toFixed(2)} zł</td>
-                    <td>${prev !== null ? prev.toFixed(2) + ' zł' : '-'}</td>
+                    <td><b>${r.nazwa}</b></td>
+                    <td style="font-weight:600;">${r.lastPrice.toFixed(2)} zł</td>
+                    <td>${r.prevPrice !== null ? r.prevPrice.toFixed(2) + ' zł' : '-'}</td>
                     <td class="${diffClass}">${diffText}</td>
+                    <td style="color:var(--success); font-weight:600;">${r.minAllTime.toFixed(2)} zł</td>
                 `;
                 tbody.appendChild(tr);
+
+                // Kafelek siatki
+                const card = document.createElement('div');
+                card.className = `grid-card ${isCheapest}`;
+                card.onclick = () => highlightOnChart(r.nazwa);
+                card.innerHTML = `
+                    <h3>${r.nazwa}</h3>
+                    <div class="grid-detail"><span style="color:var(--text-muted)">Cena:</span> <strong style="font-size:16px;">${r.lastPrice.toFixed(2)} zł</strong></div>
+                    <div class="grid-detail"><span style="color:var(--text-muted)">Zmiana:</span> <span class="${diffClass}">${diffText}</span></div>
+                    <div class="grid-detail"><span style="color:var(--text-muted)">Poprzednia:</span> <span>${r.prevPrice !== null ? r.prevPrice.toFixed(2) + ' zł' : '-'}</span></div>
+                    <div class="grid-detail" style="margin-top:8px; border-top:1px dashed var(--border); padding-top:8px;">
+                        <span style="color:var(--text-muted)">All-Time Low:</span> <strong style="color:var(--success)">${r.minAllTime.toFixed(2)} zł</strong>
+                    </div>
+                `;
+                grid.appendChild(card);
             });
+        }
+
+        function sortTable(colName) {
+            if (currentSort.col === colName) currentSort.asc = !currentSort.asc;
+            else { currentSort.col = colName; currentSort.asc = true; }
+            renderList();
+        }
+
+        function toggleView() {
+            isTableView = !isTableView;
+            document.getElementById('tableView').classList.toggle('hidden', !isTableView);
+            document.getElementById('gridView').classList.toggle('hidden', isTableView);
+            document.getElementById('viewBtn').innerHTML = isTableView ? '📱 Widok Siatki' : '📋 Widok Tabeli';
+        }
+
+        function highlightOnChart(roomName) {
+            if (!myChart) return;
+            myChart.data.datasets.forEach(ds => {
+                ds.hidden = (ds.label !== roomName);
+            });
+            myChart.update();
+            chartLinesVisible = false;
+        }
+
+        function toggleAllChartLines() {
+            if (!myChart) return;
+            chartLinesVisible = !chartLinesVisible;
+            myChart.data.datasets.forEach(ds => ds.hidden = !chartLinesVisible);
+            myChart.update();
+        }
+
+        function exportCSV() {
+            if (currentRoomsData.length === 0) return;
+            const term = document.getElementById('terminSelect').value;
+            let csv = "Apartament;Ostatnia cena;Poprzednia cena;Zmiana;All-Time Low\\n";
+            currentRoomsData.forEach(r => {
+                csv += `"${r.nazwa}";${r.lastPrice};${r.prevPrice !== null ? r.prevPrice : ''};${r.diff};${r.minAllTime}\\n`;
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `ceny_poznan_${term}.csv`;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
 
         wczytajDane();
