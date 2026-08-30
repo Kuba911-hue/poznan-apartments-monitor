@@ -133,7 +133,7 @@ def wygeneruj_strone_html():
                 <div class="stat-value" id="minPrice">-</div>
             </div>
             <div class="stat-card">
-                <div class="stat-title">Średnia cena (trend)</div>
+                <div class="stat-title">Średnia cena (trend od startu)</div>
                 <div class="stat-value" id="avgPrice" style="color: var(--text-main);">-</div>
                 <div id="avgTrend" class="trend-badge hidden"></div>
             </div>
@@ -170,9 +170,9 @@ def wygeneruj_strone_html():
                     <thead>
                         <tr>
                             <th onclick="sortTable('nazwa')">Apartament ↕</th>
-                            <th onclick="sortTable('lastPrice')">Ostatnia cena ↕</th>
-                            <th onclick="sortTable('prevPrice')">Poprzednia ↕</th>
-                            <th onclick="sortTable('diff')">Zmiana ↕</th>
+                            <th onclick="sortTable('lastPrice')">Aktualna cena ↕</th>
+                            <th onclick="sortTable('firstPrice')">Pierwsza zapisana ↕</th>
+                            <th onclick="sortTable('diff')">Całkowita zmiana ↕</th>
                             <th onclick="sortTable('minAllTime')">All-Time Low ↕</th>
                         </tr>
                     </thead>
@@ -302,15 +302,16 @@ def wygeneruj_strone_html():
                 if (arr.length === 0) return;
                 
                 const last = arr[arr.length - 1];
-                const prev = arr.length > 1 ? arr[arr.length - 2] : null;
-                const diff = prev !== null ? last - prev : 0;
+                const first = arr[0]; 
+                
+                const diff = last - first;
                 const minLow = obliczAllTimeLow(nazwa, wybranyTermin);
 
                 if (last < lowestPrice) { lowestPrice = last; lowestRoomName = nazwa; }
                 sumCurr += last; countCurr++;
-                if (prev !== null) { sumPrev += prev; countPrev++; }
+                sumPrev += first; countPrev++; 
 
-                currentRoomsData.push({ nazwa, lastPrice: last, prevPrice: prev, diff, minAllTime: minLow });
+                currentRoomsData.push({ nazwa, lastPrice: last, firstPrice: first, diff, minAllTime: minLow });
             });
 
             const avgCurr = countCurr > 0 ? sumCurr / countCurr : 0;
@@ -389,7 +390,7 @@ def wygeneruj_strone_html():
                 tr.innerHTML = `
                     <td><b>${r.nazwa}</b></td>
                     <td style="font-weight:600;">${r.lastPrice.toFixed(2)} zł</td>
-                    <td>${r.prevPrice !== null ? r.prevPrice.toFixed(2) + ' zł' : '-'}</td>
+                    <td style="color:var(--text-muted);">${r.firstPrice.toFixed(2)} zł</td>
                     <td class="${diffClass}">${diffText}</td>
                     <td style="color:var(--success); font-weight:600;">${r.minAllTime.toFixed(2)} zł</td>
                 `;
@@ -400,9 +401,9 @@ def wygeneruj_strone_html():
                 card.onclick = () => highlightOnChart(r.nazwa);
                 card.innerHTML = `
                     <h3>${r.nazwa}</h3>
-                    <div class="grid-detail"><span style="color:var(--text-muted)">Cena:</span> <strong style="font-size:16px;">${r.lastPrice.toFixed(2)} zł</strong></div>
-                    <div class="grid-detail"><span style="color:var(--text-muted)">Zmiana:</span> <span class="${diffClass}">${diffText}</span></div>
-                    <div class="grid-detail"><span style="color:var(--text-muted)">Poprzednia:</span> <span>${r.prevPrice !== null ? r.prevPrice.toFixed(2) + ' zł' : '-'}</span></div>
+                    <div class="grid-detail"><span style="color:var(--text-muted)">Aktualna:</span> <strong style="font-size:16px;">${r.lastPrice.toFixed(2)} zł</strong></div>
+                    <div class="grid-detail"><span style="color:var(--text-muted)">Zmiana od startu:</span> <span class="${diffClass}">${diffText}</span></div>
+                    <div class="grid-detail"><span style="color:var(--text-muted)">Pierwsza cena:</span> <span>${r.firstPrice.toFixed(2)} zł</span></div>
                     <div class="grid-detail" style="margin-top:8px; border-top:1px dashed var(--border); padding-top:8px;">
                         <span style="color:var(--text-muted)">All-Time Low:</span> <strong style="color:var(--success)">${r.minAllTime.toFixed(2)} zł</strong>
                     </div>
@@ -443,9 +444,9 @@ def wygeneruj_strone_html():
         function exportCSV() {
             if (currentRoomsData.length === 0) return;
             const term = document.getElementById('terminSelect').value;
-            let csv = "Apartament;Ostatnia cena;Poprzednia cena;Zmiana;All-Time Low\\n";
+            let csv = "Apartament;Aktualna cena;Pierwsza zapisana;Calkowita zmiana;All-Time Low\\n";
             currentRoomsData.forEach(r => {
-                csv += `"${r.nazwa}";${r.lastPrice};${r.prevPrice !== null ? r.prevPrice : ''};${r.diff};${r.minAllTime}\\n`;
+                csv += `"${r.nazwa}";${r.lastPrice};${r.firstPrice};${r.diff};${r.minAllTime}\\n`;
             });
             
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
