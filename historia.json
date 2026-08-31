@@ -6894,5 +6894,162 @@
         ]
       }
     ]
+  },
+  {
+    "timestamp": "2026-08-31 21:06",
+    "dane": [
+      {
+        "termin": "2026-09-05 - 2026-09-06",
+        "pokoje": [
+          {
+            "nazwa": "Apartament studio standard",
+            "cena": "290,50 zł"
+          },
+          {
+            "nazwa": "Apartament studio comfort",
+            "cena": "315,40 zł"
+          },
+          {
+            "nazwa": "Apartament studio family",
+            "cena": "356,90 zł"
+          },
+          {
+            "nazwa": "Apartament z 1 sypialnią standard",
+            "cena": "406,70 zł"
+          },
+          {
+            "nazwa": "Apartament z 1 sypialnią comfort",
+            "cena": "423,30 zł"
+          },
+          {
+            "nazwa": "Apartament Delux z 1 sypialnią",
+            "cena": "481,40 zł"
+          },
+          {
+            "nazwa": "Apartament widokowy z 1 sypialnią",
+            "cena": "564,40 zł"
+          },
+          {
+            "nazwa": "Apartament z 2 sypialniami",
+            "cena": "605,90 zł"
+          }
+        ]
+      },
+      {
+        "termin": "2026-09-12 - 2026-09-13",
+        "pokoje": [
+          {
+            "nazwa": "Apartament studio standard",
+            "cena": "332 zł"
+          },
+          {
+            "nazwa": "Apartament studio comfort",
+            "cena": "365,20 zł"
+          },
+          {
+            "nazwa": "Apartament studio family",
+            "cena": "406,70 zł"
+          },
+          {
+            "nazwa": "Apartament z 1 sypialnią standard",
+            "cena": "439,90 zł"
+          },
+          {
+            "nazwa": "Apartament z 1 sypialnią comfort",
+            "cena": "464,80 zł"
+          },
+          {
+            "nazwa": "Apartament Delux z 1 sypialnią",
+            "cena": "506,30 zł"
+          },
+          {
+            "nazwa": "Apartament widokowy z 1 sypialnią",
+            "cena": "564,40 zł"
+          },
+          {
+            "nazwa": "Apartament z 2 sypialniami",
+            "cena": "647,40 zł"
+          }
+        ]
+      },
+      {
+        "termin": "2026-09-19 - 2026-09-20",
+        "pokoje": [
+          {
+            "nazwa": "Apartament studio standard",
+            "cena": "406,70 zł"
+          },
+          {
+            "nazwa": "Apartament studio comfort",
+            "cena": "439,90 zł"
+          },
+          {
+            "nazwa": "Apartament studio family",
+            "cena": "481,40 zł"
+          },
+          {
+            "nazwa": "Apartament z 1 sypialnią standard",
+            "cena": "522,90 zł"
+          },
+          {
+            "nazwa": "Apartament z 1 sypialnią comfort",
+            "cena": "556,10 zł"
+          },
+          {
+            "nazwa": "Apartament Delux z 1 sypialnią",
+            "cena": "605,90 zł"
+          },
+          {
+            "nazwa": "Apartament widokowy z 1 sypialnią",
+            "cena": "647,40 zł"
+          },
+          {
+            "nazwa": "Apartament z 2 sypialniami",
+            "cena": "730,40 zł"
+          },
+          {
+            "nazwa": "Apartament widokowy z 2 sypialniami",
+            "cena": "771,90 zł"
+          }
+        ]
+      },
+      {
+        "termin": "2026-09-26 - 2026-09-27",
+        "pokoje": [
+          {
+            "nazwa": "Apartament studio comfort",
+            "cena": "365,20 zł"
+          },
+          {
+            "nazwa": "Apartament studio family",
+            "cena": "406,70 zł"
+          },
+          {
+            "nazwa": "Apartament z 1 sypialnią standard",
+            "cena": "439,90 zł"
+          },
+          {
+            "nazwa": "Apartament z 1 sypialnią comfort",
+            "cena": "464,80 zł"
+          },
+          {
+            "nazwa": "Apartament Delux z 1 sypialnią",
+            "cena": "506,30 zł"
+          },
+          {
+            "nazwa": "Apartament widokowy z 1 sypialnią",
+            "cena": "564,40 zł"
+          },
+          {
+            "nazwa": "Apartament z 2 sypialniami",
+            "cena": "605,90 zł"
+          },
+          {
+            "nazwa": "Apartament widokowy z 2 sypialniami",
+            "cena": "688,90 zł"
+          }
+        ]
+      }
+    ]
   }
 ]
